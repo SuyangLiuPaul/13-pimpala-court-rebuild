@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>13 Pimpala Court, Wantirna — Knockdown-Rebuild Study</title>
+<meta name="description" content="Researched knockdown-rebuild feasibility for 13 Pimpala Court Wantirna: real cadastral siting, NRZ4 compliance, 63-square two-storey concept, costs and timeline.">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🏠</text></svg>">
+</head>
+<body>
+
+<!-- ================= HERO / 3D ================= -->
+<div id="hero">
+  <canvas id="c3d"></canvas>
+  <div id="loading">building model from cadastral data…</div>
+  <div class="hero-title">
+    <h1>13 Pimpala Court, Wantirna</h1>
+    <p>Knockdown · Rebuild · 678.9 m² · NRZ4 · Lot 36 LP117445</p>
+  </div>
+  <div class="hero-hint">drag — rotate<br>scroll / pinch — zoom<br>geometry: Vicmap cadastre (GDA2020)</div>
+  <div class="hero-bar">
+    <button class="hbtn active" data-view3d="exterior">Exterior</button>
+    <button class="hbtn" data-view3d="site">Site context</button>
+    <button class="hbtn" data-view3d="ground">Ground floor</button>
+    <button class="hbtn" data-view3d="upper">Upper floor</button>
+    <button class="hbtn" id="roofBtn">Hide roof</button>
+    <button class="hbtn" id="rotBtn">Auto-rotate</button>
+  </div>
+  <div class="sunbox">
+    <span>SUN</span>
+    <input type="range" id="sunSlider" min="7" max="19" step="0.5" value="10.5">
+    <span id="sunLabel">10:30</span>
+    <span style="color:#8b93a8">true north · rear yard faces N</span>
+  </div>
+  <div class="statbar">
+    <div><b>678.9 m²</b><span>lot (cadastre)</span></div>
+    <div><b>63 sq</b><span>new home</span></div>
+    <div><b>5 + study</b><span>bedrooms</span></div>
+    <div><b>49.9 %</b><span>site coverage</span></div>
+  </div>
+  <div class="scroll-cue">▼ scroll for the full plan</div>
+</div>
+
+<nav id="topnav">
+  <a href="#site">The Site</a>
+  <a href="#rules">Planning Rules</a>
+  <a href="#design">The Design</a>
+  <a href="#plans">Floor Plans</a>
+  <a href="#costs">Costs</a>
+  <a href="#timeline">Timeline</a>
+  <a href="#process">How To Do It</a>
+  <a href="#sources">Sources</a>
+</nav>
+
+<!-- ================= SITE ================= -->
+<section id="site">
+  <div class="kicker">Researched, not guessed</div>
+  <h2>The site — measured from the state cadastre</h2>
+  <p class="lede">Every boundary below comes from the Victorian Government's Vicmap parcel database (GDA2020), projected to metres. The lot is an irregular court block: 21.5 m curved frontage plus a 5.5 m splay beside a pedestrian link, opening to a 23 m rear boundary that faces true north — the ideal orientation for living areas and solar.</p>
+  <div class="grid2">
+    <svg id="sitePlan" class="plan"></svg>
+    <div>
+      <div class="card">
+        <h3>Property record</h3>
+        <div id="factList"></div>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <h3>Street evidence (sold)</h3>
+        <div id="compList"></div>
+        <p class="small muted" style="margin-top:10px" id="marketLine"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= RULES ================= -->
+<section id="rules">
+  <div class="kicker">Knox Planning Scheme · Building Regulations 2018</div>
+  <h2>Ten rules govern this rebuild — the design passes all ten</h2>
+  <p class="lede">The lot sits in NRZ4 with <b>no overlays</b>. Because it is over 300 m², a single new dwelling needs <b>no planning permit</b> — only a building permit, with siting checked by a private building surveyor against Part 5 of the Building Regulations. The mandatory “garden area” is a legal open-space quota (lawn and paving qualify) — it does <b>not</b> require any planted garden, matching the brief: no pool, no garden beds, maximum house.</p>
+  <table id="rulesTable">
+    <thead><tr><th style="width:24%">Control</th><th style="width:42%">Requirement</th><th>This design</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<!-- ================= DESIGN ================= -->
+<section id="design">
+  <div class="kicker">Maximised within the envelope</div>
+  <h2>“Pimpala 63” — a 588 m² two-storey family home</h2>
+  <p class="lede">An L-shaped plan squeezes the most floor area the rules allow on this trapezoidal block: a 13.0 × 18.5 m main wing hugging the deep east boundary at 1.2 m, and a 7.0 × 14.0 m garage wing at 1.0 m off the west boundary. The backyard is plain lawn and a paved terrace — nothing to maintain, and still 42 % garden area against the mandatory 35 %.</p>
+  <div class="grid3">
+    <div class="card"><h3>Accommodation</h3>
+      <ul>
+        <li>5 bedrooms + ground-floor guest suite</li>
+        <li>Study + theatre + rumpus + upstairs retreat + gym/flex</li>
+        <li>4.5 bathrooms (2 ensuites + main bath + guest ens + powder)</li>
+        <li>Dry display kitchen + enclosed wet/wok kitchen + WIP</li>
+        <li>Mudroom with wudu station off the garage</li>
+        <li>Double garage + roofed alfresco 25 m²</li>
+      </ul>
+    </div>
+    <div class="card"><h3>Areas</h3><div id="areaList"></div></div>
+    <div class="card"><h3>Deliberately excluded</h3>
+      <ul>
+        <li><b>No swimming pool</b> — saves ~$80–150k + fencing + running costs</li>
+        <li><b>No landscaped garden</b> — plain turf + paving satisfies the 35 % garden-area law</li>
+        <li>No basement (doesn't count as a storey, but blows the budget)</li>
+      </ul>
+      <p class="small muted" style="margin-top:8px">Height 8.65 m ridge keeps a 35 cm margin under the mandatory 9 m NRZ cap.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PLANS ================= -->
+<section id="plans">
+  <div class="kicker">Drawn to scale from the compliance model</div>
+  <h2>Floor plans</h2>
+  <div class="grid2">
+    <svg id="groundPlan" class="plan"></svg>
+    <svg id="upperPlan" class="plan"></svg>
+  </div>
+</section>
+
+<!-- ================= COSTS ================= -->
+<section id="costs">
+  <div class="kicker">2026 Melbourne pricing, sourced</div>
+  <h2>What it really costs</h2>
+  <p class="lede" id="costLede"></p>
+  <table id="costTable">
+    <thead><tr><th>Item</th><th class="num">Low</th><th class="num">High</th><th>Notes</th></tr></thead>
+    <tbody></tbody>
+    <tfoot></tfoot>
+  </table>
+  <h3 style="font-family:var(--serif);font-weight:500;margin-top:40px">Progress payments are capped by law</h3>
+  <div id="payments"></div>
+  <div class="card" style="margin-top:26px"><h3>Feasibility check</h3><p id="feasibility"></p></div>
+</section>
+
+<!-- ================= TIMELINE ================= -->
+<section id="timeline">
+  <div class="kicker">Realistic, not brochure-speed</div>
+  <h2>Timeline — about 23 months end to end</h2>
+  <p class="lede">Volume-builder marketing quotes 8–12 months of build time; the realistic Melbourne experience for a 60+ square double-storey, including design, permits, utility abolishment and weather, is 20–24 months from first meeting to keys.</p>
+  <svg id="gantt" class="plan" style="margin-top:30px"></svg>
+</section>
+
+<!-- ================= PROCESS ================= -->
+<section id="process">
+  <div class="kicker">Step by step</div>
+  <h2>How to actually do it</h2>
+  <div class="steps" id="stepList"></div>
+</section>
+
+<!-- ================= SOURCES ================= -->
+<section id="sources">
+  <div class="kicker">Where every number comes from</div>
+  <h2>Sources & assumptions</h2>
+  <div id="srcList" style="margin-top:26px"></div>
+  <div class="disclaimer" id="disclaimer"></div>
+</section>
+
+<footer>
+  13 PIMPALA COURT · WANTIRNA VIC 3152 · CONCEPT STUDY · JUNE 2026<br>
+  GEOMETRY © STATE OF VICTORIA (VICMAP) · ROADS © OPENSTREETMAP CONTRIBUTORS
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/data_geometry.js"></script>
+<script src="js/data.js"></script>
+<script src="js/plans.js"></script>
+<script src="js/site3d.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
