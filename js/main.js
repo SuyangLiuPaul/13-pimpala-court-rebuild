@@ -30,7 +30,9 @@ function renderAll() {
   $('#viewBtns').innerHTML = Object.entries(L.hero.views).map(([k, v], i) =>
     `<button class="hbtn ${i === 0 ? 'active' : ''}" data-view3d="${k}">${v}</button>`).join('') +
     `<button class="hbtn" id="roofBtn">${L.hero.roofHide}</button>` +
-    `<button class="hbtn" id="rotBtn">${L.hero.rotate}</button>`;
+    `<button class="hbtn" id="rotBtn">${L.hero.rotate}</button>` +
+    `<button class="hbtn zoom" id="zoomIn" aria-label="zoom in">＋</button>` +
+    `<button class="hbtn zoom" id="zoomOut" aria-label="zoom out">－</button>`;
   $('#sunTag').textContent = L.hero.sun;
   $('#sunNote').textContent = L.hero.sunNote;
   $('#scrollCue').textContent = '▼ ' + L.hero.scroll;

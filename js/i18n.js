@@ -10,7 +10,7 @@ en: {
   nav: { site: 'The Site', rules: 'Planning Rules', design: 'The Design', plans: 'Floor Plans', costs: 'Costs', timeline: 'Timeline', process: 'How To', sources: 'Sources' },
   hero: {
     subtitle: 'Knockdown · Rebuild · 678.9 m² corner lot · NRZ4 · Lot 36 LP117445',
-    hint: 'drag — rotate · scroll — zoom<br>geometry: Vicmap cadastre + surveyed buildings',
+    hint: 'drag — rotate · ctrl+scroll / pinch — zoom<br>geometry: Vicmap cadastre + surveyed buildings',
     views: { exterior: 'Exterior', site: 'Street context', ground: 'Ground floor', upper: 'Upper floor' },
     roofHide: 'Hide roof', roofShow: 'Show roof', rotate: 'Rotate',
     sun: 'SUN', sunNote: 'true solar path · rear yard faces north',
@@ -171,7 +171,7 @@ zh: {
   nav: { site: '地块', rules: '规划规则', design: '设计', plans: '户型图', costs: '造价', timeline: '工期', process: '操作步骤', sources: '数据来源' },
   hero: {
     subtitle: '拆除重建 · 678.9 m² 转角地块 · NRZ4 · Lot 36 LP117445',
-    hint: '拖拽—旋转 · 滚轮—缩放<br>几何数据：Vicmap 地籍 + 实测建筑',
+    hint: '拖拽—旋转 · Ctrl+滚轮/双指—缩放<br>几何数据：Vicmap 地籍 + 实测建筑',
     views: { exterior: '外观', site: '街区环境', ground: '一层', upper: '二层' },
     roofHide: '隐藏屋顶', roofShow: '显示屋顶', rotate: '自动旋转',
     sun: '太阳', sunNote: '真实日照轨迹 · 后院朝正北',
@@ -332,7 +332,7 @@ tw: {
   nav: { site: '地塊', rules: '規劃規則', design: '設計', plans: '戶型圖', costs: '造價', timeline: '工期', process: '操作步驟', sources: '資料來源' },
   hero: {
     subtitle: '拆除重建 · 678.9 m² 轉角地塊 · NRZ4 · Lot 36 LP117445',
-    hint: '拖曳—旋轉 · 滾輪—縮放<br>幾何資料：Vicmap 地籍 + 實測建築',
+    hint: '拖曳—旋轉 · Ctrl+滾輪/雙指—縮放<br>幾何資料：Vicmap 地籍 + 實測建築',
     views: { exterior: '外觀', site: '街區環境', ground: '一樓', upper: '二樓' },
     roofHide: '隱藏屋頂', roofShow: '顯示屋頂', rotate: '自動旋轉',
     sun: '太陽', sunNote: '真實日照軌跡 · 後院朝正北',

@@ -754,23 +754,32 @@ function bindCanvasControls() {
     rotY -= (e.clientX - px) * .008; rotX += (e.clientY - py) * .008;
     rotX = Math.max(.06, Math.min(1.45, rotX)); px = e.clientX; py = e.clientY; updateCam();
   });
-  el.addEventListener('wheel', e => { e.preventDefault(); dist += e.deltaY * .03; dist = Math.max(12, Math.min(140, dist)); updateCam(); }, { passive: false });
-  let td = 0;
-  el.addEventListener('touchstart', e => {
-    if (e.touches.length === 1) { drag = true; px = e.touches[0].clientX; py = e.touches[0].clientY; }
-    else if (e.touches.length === 2) td = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-  }, { passive: false });
-  el.addEventListener('touchmove', e => {
+  // plain wheel scrolls the PAGE; ctrl+wheel (and trackpad pinch) zooms the model
+  el.addEventListener('wheel', e => {
+    if (!e.ctrlKey) return;
     e.preventDefault();
-    if (e.touches.length === 1 && drag) {
-      rotY -= (e.touches[0].clientX - px) * .008; rotX += (e.touches[0].clientY - py) * .008;
-      rotX = Math.max(.06, Math.min(1.45, rotX)); px = e.touches[0].clientX; py = e.touches[0].clientY; updateCam();
-    } else if (e.touches.length === 2) {
-      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-      dist += (td - d) * .07; dist = Math.max(12, Math.min(140, dist)); td = d; updateCam();
-    }
+    dist += e.deltaY * .05; dist = Math.max(12, Math.min(140, dist)); updateCam();
   }, { passive: false });
-  el.addEventListener('touchend', () => drag = false);
+  // touch: one finger scrolls the page; two fingers rotate + pinch-zoom the model
+  let td = 0, tmx = 0, tmy = 0;
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      td = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      tmx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      tmy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    }
+  }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2) return;
+    e.preventDefault();
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    dist += (td - d) * .07; dist = Math.max(12, Math.min(140, dist)); td = d;
+    rotY -= (mx - tmx) * .008; rotX += (my - tmy) * .008;
+    rotX = Math.max(.06, Math.min(1.45, rotX)); tmx = mx; tmy = my;
+    updateCam();
+  }, { passive: false });
 
   document.getElementById('sunSlider').addEventListener('input', function () {
     setSun(parseFloat(this.value));
@@ -792,6 +801,12 @@ function bindHudButtons() {
   });
   document.getElementById('rotBtn').addEventListener('click', function () {
     autoRot = !autoRot; this.classList.toggle('active', autoRot); invalidate();
+  });
+  document.getElementById('zoomIn').addEventListener('click', () => {
+    dist = Math.max(12, dist - 7); updateCam();
+  });
+  document.getElementById('zoomOut').addEventListener('click', () => {
+    dist = Math.min(140, dist + 7); updateCam();
   });
 }
 function animate() {
