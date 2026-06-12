@@ -42,3 +42,12 @@ Run locally: any static server, e.g. `npx http-server .`
 Concept study only — not architectural, planning, legal or financial advice.
 Verify against a current Planning Property Report, feature survey and soil report.
 Geometry © State of Victoria (Vicmap); road centrelines © OpenStreetMap contributors.
+
+## v3 notes
+
+- Corner-lot siting corrected from aerial + OSM survey: Pimpala Ct is the **west side street**
+  (2.0 m setback), Benwerrin Dr the front; driveway re-uses the court access.
+- Real neighbouring building footprints (OpenStreetMap, surveyed 2025) render in the
+  3D street context and site plan; Pimpala court bowl modelled at the surveyed position.
+- Trilingual UI: English / 简体 / 繁體 (auto-detects browser language, persists choice).
+- Rendering is on-demand with cached shadow maps — near-zero GPU when idle.
