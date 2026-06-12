@@ -20,28 +20,28 @@ const PROPERTY = {
 };
 
 const DESIGN = {
-  beds: 5, baths: 4.5, cars: 2, squares: 54.4,
+  beds: 6, baths: 4.5, cars: 2, squares: 61.1,
   areas: {
-    groundRoofed: 290.8,        // incl. garage 40.3, alfresco 23.8, porch 7.0
-    upper: 215.0,
-    totalUnderRoof: 505.8,
-    internalLiving: 434.7,
+    groundRoofed: 299.5,        // incl. garage 40.3, alfresco 23.8, porch 7.0
+    upper: 268.2,               // upper now spans the full west wing (bed 6 + media)
+    totalUnderRoof: 567.7,
+    internalLiving: 496.6,
     garage: 40.3, alfresco: 23.8, porch: 7.0,
     driveway: 50, openPaving: 46,
-    gardenArea: 338.1, gardenPct: 49.8,
-    coveragePct: 42.8, permeabilityPct: 43.0,
-    seclusionYard: 48.9,        // NE secluded POS, 12.4 × 3.9 m, north-facing
+    gardenArea: 329.4, gardenPct: 48.5,
+    coveragePct: 44.1, permeabilityPct: 41.7,
+    seclusionYard: 61,          // NE secluded POS: 12.4 m wide, 3.3–6.7 m deep wedge
   },
   envelope: {
-    eastWing: { w: 12.4, d: 16.0 },
+    eastWing: { w: 12.4, d: 16.7 },
     westWing: { w: 6.6, d: 14.0 },
     ridge: 8.46, groundCeiling: 2.74, upperCeiling: 2.59, roofPitch: 22.5,
   },
   footprintXY: {
-    east: [[8.99, -7.57], [-3.15, -5.05], [0.10, 10.61], [12.24, 8.09]],
+    east: [[8.99, -7.57], [-3.15, -5.05], [0.24, 11.30], [12.38, 8.78]],
     west: [[-2.64, -2.61], [-9.10, -1.27], [-6.26, 12.44], [0.20, 11.10]],
   },
-  setbacks: { front: 8.06, sideStreet: 2.0, east: 1.2, rearYard: 3.9, westWingRear: 1.46 },
+  setbacks: { front: 8.06, sideStreet: 2.0, east: 1.2, rearYard: 3.3, westWingRear: 1.46 },
 };
 
 const COSTS = {
@@ -52,15 +52,15 @@ const COSTS = {
     { id: 's29a', low: 1200, high: 2500 },
     { id: 'permit', low: 5500, high: 9500 },
     { id: 'knox', low: 600, high: 900 },
-    { id: 'build', low: 1165000, high: 1415000 },
-    { id: 'custom', low: 1470000, high: 1820000, alt: true },
+    { id: 'build', low: 1310000, high: 1590000 },
+    { id: 'custom', low: 1650000, high: 2045000, alt: true },
     { id: 'sitecosts', low: 35000, high: 70000 },
     { id: 'driveway', low: 18000, high: 30000 },
     { id: 'fencing', low: 9000, high: 16000 },
     { id: 'flooring', low: 30000, high: 48000 },
-    { id: 'contingency', low: 100000, high: 135000 },
+    { id: 'contingency', low: 110000, high: 148000 },
   ],
-  totals: { low: 1405300, high: 1792900 },
+  totals: { low: 1560300, high: 1980900 },
   paymentStages: [5, 10, 15, 35, 25, 10],
 };
 

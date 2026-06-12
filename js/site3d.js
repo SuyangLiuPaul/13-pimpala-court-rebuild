@@ -7,7 +7,7 @@
 let scene, camera, renderer, sun, hemi;
 let extG, roofG, siteCtxG, lotG, intGround, intUpper;
 let view = 'exterior', autoRot = false, roofOn = true;
-let rotY = -0.65, rotX = 0.33, dist = 50, tgt = { x: 0, y: 2.2, z: -2 };
+let rotY = -0.7, rotX = 0.27, dist = 46, tgt = { x: 0, y: 2.8, z: -2 };
 let needsRender = true, heroVisible = true;
 const invalidate = () => { needsRender = true; };
 const reshadow = () => { renderer.shadowMap.needsUpdate = true; needsRender = true; };
@@ -82,7 +82,19 @@ function makeTextures() {
       g.fillStyle = `rgb(${v},${v - 6},${v - 14})`;
       g.beginPath(); g.arc(Math.random() * w, Math.random() * h, .9 + Math.random() * 1.4, 0, 7); g.fill();
     }
+    // control joints
+    g.strokeStyle = 'rgba(60,55,48,.55)'; g.lineWidth = 2.2;
+    g.beginPath(); g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.moveTo(w / 2, 0); g.lineTo(w / 2, h); g.stroke();
   }, 3, 3);
+  TEX.cloud = canvasTex(256, 128, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    for (let i = 0; i < 9; i++) {
+      const cx = 40 + Math.random() * (w - 80), cy = 36 + Math.random() * (h - 70), r = 22 + Math.random() * 30;
+      const gr = g.createRadialGradient(cx, cy, 2, cx, cy, r);
+      gr.addColorStop(0, 'rgba(255,255,255,.85)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill();
+    }
+  }, 1, 1);
   TEX.paver = canvasTex(256, 256, (g, w, h) => {
     g.fillStyle = '#8e887e'; g.fillRect(0, 0, w, h);
     for (let y = 0; y < h; y += 64) for (let x = 0; x < w; x += 64) {
@@ -122,7 +134,7 @@ function makeMaterials() {
     renderDark: M({ color: 0x4b4f55, roughness: .8 }),
     roof: M({ map: TEX.roof, roughness: .85, side: THREE.DoubleSide }),
     fascia: M({ color: 0x2e3136, roughness: .55 }),
-    glass: M({ color: 0x6fa8c2, roughness: .06, metalness: .55, transparent: true, opacity: .5 }),
+    glass: M({ color: 0x2e3f48, roughness: .05, metalness: .9, transparent: true, opacity: .92, envMapIntensity: 1.4 }),
     frame: M({ color: 0x191b1e, roughness: .45, metalness: .3 }),
     door: M({ color: 0x4f3a28, roughness: .6 }),
     garage: M({ map: TEX.garage, roughness: .5, metalness: .35 }),
@@ -157,6 +169,18 @@ function makeMaterials() {
     screen: M({ color: 0x0e1013, roughness: .3 }),
     white: M({ color: 0xf4f2ee, roughness: .5 }),
   };
+  // surface relief — reuse colour maps as bump maps (cheap, effective)
+  MAT.brick.bumpMap = TEX.brick; MAT.brick.bumpScale = .015;
+  MAT.roof.bumpMap = TEX.roof; MAT.roof.bumpScale = .03;
+  MAT.render.bumpMap = TEX.render; MAT.render.bumpScale = .006;
+  MAT.agg.bumpMap = TEX.agg; MAT.agg.bumpScale = .012;
+  MAT.fence.bumpMap = TEX.fence; MAT.fence.bumpScale = .02;
+  // keep IBL subtle on matte surfaces so sun/shadow contrast survives;
+  // strong only on glass and metals (default envMapIntensity is 1.0 — set explicitly)
+  for (const k in MAT) {
+    if (k === 'glass') continue;
+    MAT[k].envMapIntensity = (MAT[k].metalness && MAT[k].metalness > .4) ? .85 : .25;
+  }
 }
 
 // ---------- primitives ----------
@@ -346,6 +370,15 @@ function buildSiteCtx() {
   // street trees on verges (context outside the lot)
   [[-19.5, -20], [-21, 14], [-18, 40], [12, -23.5], [38, -20], [-17, 64], [30, 28], [-37, 30], [40, 50]]
     .forEach((t, i) => tree(siteCtxG, ...S2W(t), .9 + (i % 3) * .25));
+
+  // clouds — billboard sprites high above the suburb
+  const cloudMat = new THREE.SpriteMaterial({ map: TEX.cloud, transparent: true, opacity: .8, depthWrite: false });
+  [[-60, 70, -90, 46], [40, 86, -120, 60], [110, 76, -40, 52], [-120, 92, 30, 64], [70, 82, 90, 56], [-30, 78, 110, 48]]
+    .forEach(([x, y, z, s]) => {
+      const c = new THREE.Sprite(cloudMat);
+      c.position.set(x, y, z); c.scale.set(s, s * .42, 1);
+      siteCtxG.add(c);
+    });
 }
 function tree(g, x, z, s) {
   const o = new THREE.Group();
@@ -365,14 +398,23 @@ function tree(g, x, z, s) {
 function buildLot() {
   lotG = new THREE.Group();
   flatPoly(lotG, SITE.lot.slice(0, -1).map(p => [p[0], -p[1]]), -.045, .065, MAT.lawn, .25);
-  // fences: east [0,1], rear [7,8]; low front returns none (open corner frontage)
+  // fences: east [0,1], rear [7,8] — palings + capping rail + posts
   for (const [i, j] of [[0, 1], [7, 8]]) {
     const a = S2W(SITE.lot[i]), b = S2W(SITE.lot[j]);
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const ry = -Math.atan2(b[1] - a[1], b[0] - a[0]);
     const f = new THREE.Mesh(new THREE.BoxGeometry(len, 1.95, .07), MAT.fence);
     f.position.set((a[0] + b[0]) / 2, .975, (a[1] + b[1]) / 2);
-    f.rotation.y = -Math.atan2(b[1] - a[1], b[0] - a[0]);
-    f.castShadow = true; f.receiveShadow = true; lotG.add(f);
+    f.rotation.y = ry; f.castShadow = true; f.receiveShadow = true; lotG.add(f);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(len, .07, .12), MAT.dwood);
+    cap.position.set((a[0] + b[0]) / 2, 1.96, (a[1] + b[1]) / 2); cap.rotation.y = ry; lotG.add(cap);
+    const nPosts = Math.round(len / 2.4);
+    for (let k = 0; k <= nPosts; k++) {
+      const t = k / nPosts;
+      const post = new THREE.Mesh(new THREE.BoxGeometry(.11, 1.9, .11), MAT.dwood);
+      post.position.set(a[0] + (b[0] - a[0]) * t, .95, a[1] + (b[1] - a[1]) * t);
+      post.rotation.y = ry; post.castShadow = true; lotG.add(post);
+    }
   }
   // side fence along Pimpala behind the driveway (privacy to side street, ≤2 m allowed behind frontage line)
   const a = S2W(SITE.lot[6]), b = S2W(SITE.lot[7]);
@@ -391,7 +433,7 @@ function buildLot() {
   // path to porch from driveway
   flatPoly(lotG, [[13.6, -.2], [13.6, -1.6], [7.0, -2.6], [7.0, -.9]].map(p => hw(...p)), 0, .045, MAT.conc, .5);
   // rear terrace in the north yard (unroofed pavers)
-  flatPoly(lotG, [[1.6, 16.1], [8.4, 16.1], [8.4, 18.4], [1.6, 18.4]].map(p => hw(...p)), 0, .05, MAT.paver, .45);
+  flatPoly(lotG, [[1.6, 16.75], [8.4, 16.75], [8.4, 19.0], [1.6, 19.0]].map(p => hw(...p)), 0, .05, MAT.paver, .45);
   // letterbox at the splay corner
   const lb = new THREE.Group();
   B(lb, .34, .9, .34, 0, .45, 0, MAT.renderDark); B(lb, .4, .24, .4, 0, 1.0, 0, MAT.fascia);
@@ -411,7 +453,7 @@ const GH = 2.74, FT = .36, UH = 2.59, UY = GH + FT;
 function buildExterior() {
   extG = new THREE.Group();
   // slabs
-  flatPoly(extG, [hw(0, 0), hw(12.4, 0), hw(12.4, 16.0), hw(0, 16.0)], -.01, .15, MAT.conc, .3);
+  flatPoly(extG, [hw(0, 0), hw(12.4, 0), hw(12.4, 16.7), hw(0, 16.7)], -.01, .15, MAT.conc, .3);
   flatPoly(extG, [hw(12.4, 2.5), hw(19, 2.5), hw(19, 16.5), hw(12.4, 16.5)], -.01, .15, MAT.conc, .3);
 
   // ---- EAST WING ground (brick) ----
@@ -420,10 +462,10 @@ function buildExterior() {
   wallRun(extG, hw(4.2, 0), hw(4.2, 2.3), GH, .24, MAT.brick, []);
   wallRun(extG, hw(7.4, 0), hw(7.4, 2.3), GH, .24, MAT.brick, []);
   wallRun(extG, hw(7.4, 0), hw(12.4, 0), GH, .24, MAT.brick, [{ at: 2.5, w: 2.4, type: 'window', sill: .75 }]);
-  wallRun(extG, hw(0, 0), hw(0, 16.0), GH, .24, MAT.brick, [
-    { at: 2.1, w: 1.8, type: 'window' }, { at: 7.8, w: 1.8, type: 'window' }, { at: 13.6, w: 2.4, type: 'window', sill: .65 }]);
-  wallRun(extG, hw(12.4, 16.0), hw(0, 16.0), GH, .24, MAT.brick, [
-    { at: 8.2, w: 4.4, type: 'stacker', head: 2.4 }, { at: 1.8, w: 2.0, type: 'window', sill: 1.0 }]);
+  wallRun(extG, hw(0, 0), hw(0, 16.7), GH, .24, MAT.brick, [
+    { at: 2.1, w: 1.8, type: 'window' }, { at: 7.8, w: 1.8, type: 'window' }, { at: 14.0, w: 2.4, type: 'window', sill: .65 }]);
+  wallRun(extG, hw(12.4, 16.7), hw(0, 16.7), GH, .24, MAT.brick, [
+    { at: 8.4, w: 4.4, type: 'stacker', head: 2.4 }, { at: 1.9, w: 2.0, type: 'window', sill: 1.0 }]);
   wallRun(extG, hw(12.4, 0), hw(12.4, 2.5), GH, .24, MAT.brick, []);
 
   // ---- WEST WING ground ----
@@ -431,30 +473,31 @@ function buildExterior() {
   wallRun(extG, hw(19, 2.5), hw(19, 12.9), GH, .24, MAT.brick, [
     { at: 7.4, w: 1.2, type: 'window', sill: 1.4, head: 2.0 }, { at: 9.4, w: 1.0, type: 'door' }]);
   wallRun(extG, hw(19, 12.9), hw(12.4, 12.9), GH, .24, MAT.brick, [{ at: 3.3, w: 2.4, type: 'stacker', head: 2.3 }]);
-  // alfresco posts (open east + north)
-  [[12.8, 16.3], [18.7, 16.3]].forEach(([u, v]) => {
+  // alfresco posts under the upper-floor edge (open east + north)
+  [[12.8, 16.2], [18.7, 16.2]].forEach(([u, v]) => {
     const p = hw(u, v);
-    const post = new THREE.Mesh(new THREE.BoxGeometry(.18, GH, .18), MAT.fascia);
-    post.position.set(p[0], GH / 2, p[1]); post.castShadow = true; extG.add(post);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(.18, GH + .3, .18), MAT.fascia);
+    post.position.set(p[0], (GH + .3) / 2, p[1]); post.castShadow = true; extG.add(post);
   });
   // alfresco west privacy wall (to Pimpala)
   wallRun(extG, hw(19, 12.9), hw(19, 16.5), GH, .24, MAT.brick, []);
 
-  // ---- UPPER (render) ----
+  // ---- UPPER (render) — now spans the full west wing too (bed 6 + media) ----
   const upG = new THREE.Group();
   wallRun(upG, hw(0.8, 0), hw(12.4, 0), UH, .2, MAT.render, [
     { at: 2.2, w: 2.0, type: 'window', sill: .9 }, { at: 8.8, w: 2.0, type: 'window', sill: .9 }], UY);
-  wallRun(upG, hw(0.8, 0), hw(0.8, 16.0), UH, .2, MAT.render, [
-    { at: 2.2, w: 1.8, type: 'window' }, { at: 9.8, w: 1.8, type: 'window' }, { at: 13.8, w: 2.0, type: 'window', sill: .8 }], UY);
-  wallRun(upG, hw(12.4, 16.0), hw(0.8, 16.0), UH, .2, MAT.render, [
-    { at: 2.6, w: 2.2, type: 'window', sill: .8 }, { at: 7.0, w: 1.4, type: 'window', sill: 1.2, head: 2.0 }, { at: 10.2, w: 1.4, type: 'window' }], UY);
-  wallRun(upG, hw(12.4, 0), hw(12.4, 16.0), UH, .2, MAT.render, [{ at: 5.2, w: 1.6, type: 'window' }], UY);
+  wallRun(upG, hw(0.8, 0), hw(0.8, 16.7), UH, .2, MAT.render, [
+    { at: 2.2, w: 1.8, type: 'window' }, { at: 9.8, w: 1.8, type: 'window' }, { at: 14.4, w: 2.0, type: 'window', sill: .8 }], UY);
+  wallRun(upG, hw(12.4, 16.7), hw(0.8, 16.7), UH, .2, MAT.render, [
+    { at: 2.7, w: 2.2, type: 'window', sill: .8 }, { at: 7.2, w: 1.4, type: 'window', sill: 1.2, head: 2.0 }, { at: 10.6, w: 1.4, type: 'window' }], UY);
+  wallRun(upG, hw(12.4, 15.9), hw(12.4, 16.7), UH, .2, MAT.render, [], UY);
   wallRun(upG, hw(12.4, 2.5), hw(19, 2.5), UH, .2, MAT.render, [{ at: 3.4, w: 2.2, type: 'window', sill: .9 }], UY);
-  wallRun(upG, hw(19, 2.5), hw(19, 9.1), UH, .2, MAT.render, [{ at: 3.3, w: 1.6, type: 'window' }], UY);
-  wallRun(upG, hw(19, 9.1), hw(12.4, 9.1), UH, .2, MAT.render, [], UY);
-  // inter-storey band
-  flatPoly(upG, [hw(.7, -.06), hw(12.5, -.06), hw(12.5, 16.1), hw(.7, 16.1)], UY - FT, FT, MAT.renderDark, .2);
-  flatPoly(upG, [hw(12.3, 2.42), hw(19.1, 2.42), hw(19.1, 9.2), hw(12.3, 9.2)], UY - FT, FT, MAT.renderDark, .2);
+  wallRun(upG, hw(19, 2.5), hw(19, 15.9), UH, .2, MAT.render, [
+    { at: 3.3, w: 1.6, type: 'window' }, { at: 8.4, w: 2.0, type: 'window', sill: .9 }, { at: 12.0, w: 1.6, type: 'window' }], UY);
+  wallRun(upG, hw(19, 15.9), hw(12.4, 15.9), UH, .2, MAT.render, [{ at: 3.3, w: 1.8, type: 'window', sill: .9 }], UY);
+  // inter-storey band (the west band cantilevers 0.6 m over the alfresco edge)
+  flatPoly(upG, [hw(.7, -.06), hw(12.5, -.06), hw(12.5, 16.8), hw(.7, 16.8)], UY - FT, FT, MAT.renderDark, .2);
+  flatPoly(upG, [hw(12.3, 2.42), hw(19.1, 2.42), hw(19.1, 16.55), hw(12.3, 16.55)], UY - FT, FT, MAT.renderDark, .2);
   extG.add(upG);
 
   // porch canopy
@@ -466,7 +509,7 @@ function buildExterior() {
   });
 
   // detail: downpipes at corners
-  [[0.15, .3], [0.15, 15.7], [12.25, .3], [18.85, 2.8], [18.85, 12.6]].forEach(([u, v]) => {
+  [[0.15, .3], [0.15, 16.4], [12.25, .3], [18.85, 2.8], [18.85, 15.6]].forEach(([u, v]) => {
     const p = hw(u, v);
     const dp = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, GH, 8), MAT.fascia);
     dp.position.set(p[0], GH / 2, p[1]); extG.add(dp);
@@ -481,11 +524,10 @@ function buildExterior() {
 
   // ---- roofs ----
   roofG = new THREE.Group();
-  const main = hipRoof(roofG, 0.8, 0, 12.4, 16.0, UY + UH, 22.5, .5);
-  hipRoof(roofG, 12.4, 2.5, 19, 9.1, UY + UH, 22.5, .45);
-  hipRoof(roofG, 12.4, 9.1, 19.2, 16.5, GH + .25, 14, .42, { noSoffit: false });
+  const main = hipRoof(roofG, 0.8, 0, 12.4, 16.7, UY + UH, 22.5, .5);
+  hipRoof(roofG, 12.4, 2.5, 19, 15.9, UY + UH, 22.5, .45);
   // east ground strip skillion (covers u 0–0.8 inset)
-  flatPoly(roofG, [hw(-0.35, -.3), hw(1.0, -.3), hw(1.0, 16.3), hw(-0.35, 16.3)], GH + .18, .1, MAT.fascia, .2);
+  flatPoly(roofG, [hw(-0.35, -.3), hw(1.0, -.3), hw(1.0, 17.0), hw(-0.35, 17.0)], GH + .18, .1, MAT.fascia, .2);
 
   // solar array: single panel patch laid parallel to the west slope,
   // centred within the ridge span (v 5.8–10.2) so it stays on the plane
@@ -585,7 +627,7 @@ function stair(g, u0, v0, y0, rise) {
 
 function buildInteriorGround() {
   intGround = new THREE.Group();
-  zone(intGround, 0, 0, 12.4, 16.0, MAT.floorG, 0);
+  zone(intGround, 0, 0, 12.4, 16.7, MAT.floorG, 0);
   zone(intGround, 12.4, 2.5, 19, 16.5, MAT.floorTile, 0);
   zone(intGround, .2, 0, 4.2, 5.9, MAT.carpet, .01);
   zone(intGround, 7.6, 3.6, 12.2, 7.6, MAT.carpet, .01);
@@ -609,11 +651,11 @@ function buildInteriorGround() {
   furnish(intGround, 'bed', 2.2, 2.2, 180, 0);
   furnish(intGround, 'desk', 9.8, 1.4, 180, 0);
   furnish(intGround, 'sofa', 9.9, 6.2, 0, 0); furnish(intGround, 'tv', 9.9, 4.1, 180, 0);
-  furnish(intGround, 'sofa', 3.1, 13.6, -90, 0); furnish(intGround, 'tv', 1.1, 13.6, 90, 0);
-  furnish(intGround, 'dining', 8.0, 13.8, 0, 0);
-  furnish(intGround, 'island', 10.0, 13.2, 90, 0);
-  furnish(intGround, 'bench', 11.3, 14.6, -90, 0, { len: 2.8 });
-  furnish(intGround, 'fridge', 11.6, 12.1, 0, 0);
+  furnish(intGround, 'sofa', 3.1, 14.2, -90, 0); furnish(intGround, 'tv', 1.1, 14.2, 90, 0);
+  furnish(intGround, 'dining', 8.0, 14.4, 0, 0);
+  furnish(intGround, 'island', 10.4, 13.8, 90, 0);
+  furnish(intGround, 'bench', 11.4, 15.2, -90, 0, { len: 2.8 });
+  furnish(intGround, 'fridge', 11.7, 12.2, 0, 0);
   furnish(intGround, 'bench', 15.5, 9.2, 0, 0, { len: 2.4 });
   furnish(intGround, 'fridge', 13.2, 9.3, 0, 0);
   furnish(intGround, 'wudu', 13.3, 12.3, 0, 0);
@@ -624,9 +666,9 @@ function buildInteriorGround() {
 }
 function buildInteriorUpper() {
   intUpper = new THREE.Group();
-  zone(intUpper, .8, 0, 12.4, 16.0, MAT.carpet, UY - .04);
-  zone(intUpper, 12.4, 2.5, 19, 9.1, MAT.carpet, UY - .04);
-  zone(intUpper, 8.4, 12.6, 11.0, 15.8, MAT.bath, UY - .02);
+  zone(intUpper, .8, 0, 12.4, 16.7, MAT.carpet, UY - .04);
+  zone(intUpper, 12.4, 2.5, 19, 15.9, MAT.carpet, UY - .04);
+  zone(intUpper, 8.4, 13.2, 11.0, 16.5, MAT.bath, UY - .02);
   zone(intUpper, 8.6, 4.2, 12.2, 7.0, MAT.bath, UY - .02);
   zone(intUpper, 12.4, 6.4, 14.8, 9.1, MAT.bath, UY - .02);
   iwV(intUpper, 4.4, .8, 5.0, UY, .9);
@@ -634,26 +676,32 @@ function buildInteriorUpper() {
   iwU(intUpper, 8.6, .2, 7.0, UY, 1.0);
   iwV(intUpper, 4.2, 8.6, 12.2, UY, .9);
   iwV(intUpper, 7.0, 8.6, 12.2, UY, .9);
-  iwU(intUpper, 5.4, 8.4, 15.8, UY, 1.0);
+  iwU(intUpper, 5.4, 8.4, 16.5, UY, 1.0);
   iwV(intUpper, 8.4, .8, 5.4, UY, 1.1);
-  iwV(intUpper, 11.8, .8, 5.8, UY, 1.1);
-  iwV(intUpper, 12.6, 5.8, 12.4, UY, 1.3);
-  iwU(intUpper, 8.4, 12.6, 15.8, UY, .8);
-  iwU(intUpper, 11.0, 12.6, 15.8, UY, 0);
+  iwV(intUpper, 12.4, .8, 5.8, UY, 1.1);
+  iwV(intUpper, 13.2, 5.8, 12.4, UY, 1.3);
+  iwU(intUpper, 8.4, 13.2, 16.5, UY, .8);
+  iwU(intUpper, 11.0, 13.2, 16.5, UY, 0);
   iwV(intUpper, 6.4, 12.4, 19.0, UY, 1.0);
   iwU(intUpper, 14.8, 6.4, 9.1, UY, .8);
+  iwV(intUpper, 9.1, 12.4, 19.0, UY, 1.2);   // media front
+  iwV(intUpper, 12.7, 12.4, 19.0, UY, .9);   // media | bed 6
   stair(intUpper, 4.35, 6.6, 0, UY); // visible from above through void
-  furnish(intUpper, 'bed', 3.0, 14.0, 0, UY, { master: true });
-  furnish(intUpper, 'wr', 7.1, 15.3, 0, UY, { len: 2.4 });
-  furnish(intUpper, 'vanity', 9.7, 15.2, 0, UY); furnish(intUpper, 'bath', 9.7, 13.4, 0, UY); furnish(intUpper, 'shower', 10.4, 14.3, 90, UY);
+  furnish(intUpper, 'bed', 3.0, 14.6, 0, UY, { master: true });
+  furnish(intUpper, 'wr', 7.1, 15.9, 0, UY, { len: 2.4 });
+  furnish(intUpper, 'vanity', 9.7, 15.9, 0, UY); furnish(intUpper, 'bath', 9.7, 14.1, 0, UY); furnish(intUpper, 'shower', 10.4, 15.0, 90, UY);
   furnish(intUpper, 'bed', 2.9, 2.4, 180, UY);
   furnish(intUpper, 'bed', 10.4, 2.2, 180, UY);
   furnish(intUpper, 'bed', 15.7, 4.4, -90, UY);
-  furnish(intUpper, 'sofa', 2.9, 10.2, 90, UY); furnish(intUpper, 'tv', 4.7, 10.2, -90, UY);
-  furnish(intUpper, 'desk', 10.4, 9.0, 0, UY);
+  furnish(intUpper, 'sofa', 2.9, 10.4, 90, UY); furnish(intUpper, 'tv', 4.7, 10.4, -90, UY);
+  furnish(intUpper, 'desk', 10.4, 9.2, 0, UY);
   furnish(intUpper, 'vanity', 9.8, 5.0, 180, UY); furnish(intUpper, 'shower', 11.5, 6.3, 0, UY);
   furnish(intUpper, 'wc', 11.6, 4.8, 0, UY);
   furnish(intUpper, 'vanity', 13.4, 7.6, -90, UY); furnish(intUpper, 'shower', 14.2, 8.4, 180, UY);
+  // media lounge + bed 6 (new upper west wing)
+  furnish(intUpper, 'sofa', 15.6, 11.4, 0, UY); furnish(intUpper, 'tv', 15.6, 9.6, 180, UY);
+  furnish(intUpper, 'bed', 16.2, 14.4, -90, UY);
+  furnish(intUpper, 'wr', 13.7, 14.3, 90, UY, { len: 2.6 });
 }
 
 // ============================================================
@@ -663,13 +711,13 @@ function initScene() {
   scene = new THREE.Scene();
   scene.background = canvasTex(16, 512, (g, w, h) => {
     const gr = g.createLinearGradient(0, 0, 0, h);
-    gr.addColorStop(0, '#79a6d2'); gr.addColorStop(.55, '#aac7e0'); gr.addColorStop(.78, '#d9e2e6'); gr.addColorStop(1, '#e8e4da');
+    gr.addColorStop(0, '#5d92c9'); gr.addColorStop(.5, '#9cc0e0'); gr.addColorStop(.78, '#d5e0e6'); gr.addColorStop(1, '#e8e4da');
     g.fillStyle = gr; g.fillRect(0, 0, w, h);
   });
-  scene.fog = new THREE.Fog(0xc3d2dc, 95, 240);
+  scene.fog = new THREE.Fog(0xc3d2dc, 130, 320);
 
   const heroEl = document.getElementById('hero');
-  camera = new THREE.PerspectiveCamera(42, heroEl.clientWidth / heroEl.clientHeight, .1, 500);
+  camera = new THREE.PerspectiveCamera(38, heroEl.clientWidth / heroEl.clientHeight, .1, 500);
   renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c3d'), antialias: true });
   renderer.setSize(heroEl.clientWidth, heroEl.clientHeight, false); // CSS keeps the canvas at 100%
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
@@ -678,20 +726,33 @@ function initScene() {
   renderer.shadowMap.autoUpdate = false;            // static scene: render shadows on demand
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.02;
 
-  hemi = new THREE.HemisphereLight(0xcfe2ff, 0x6e6a58, .6); scene.add(hemi);
+  // image-based lighting: PMREM from a generated sky — gives glass/metal real reflections
+  const eqTex = canvasTex(512, 256, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, 0, h);
+    gr.addColorStop(0, '#8fb6dd'); gr.addColorStop(.45, '#bfd5e6'); gr.addColorStop(.62, '#e8e8e0');
+    gr.addColorStop(.66, '#9fae8a'); gr.addColorStop(1, '#5d7a4a');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  });
+  eqTex.mapping = THREE.EquirectangularReflectionMapping;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromEquirectangular(eqTex).texture;
+  pmrem.dispose();
+
+  hemi = new THREE.HemisphereLight(0xcfe2ff, 0x6e6a58, .42); scene.add(hemi);
   sun = new THREE.DirectionalLight(0xfff2dc, 2.0);
-  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  const fineShadows = matchMedia('(pointer: fine)').matches;
+  sun.castShadow = true; sun.shadow.mapSize.set(fineShadows ? 4096 : 2048, fineShadows ? 4096 : 2048);
   const sr = 52; Object.assign(sun.shadow.camera, { left: -sr, right: sr, top: sr, bottom: -sr, near: 1, far: 170 });
   sun.shadow.bias = -.0004;
-  scene.add(sun);
-  scene.add(new THREE.AmbientLight(0xffffff, .12));
+  scene.add(sun); scene.add(sun.target);
+  scene.add(new THREE.AmbientLight(0xffffff, .05));
 
   makeTextures(); makeMaterials();
   buildSiteCtx(); buildLot(); buildExterior(); buildInteriorGround(); buildInteriorUpper();
   scene.add(siteCtxG, lotG, extG, roofG, intGround, intUpper);
-  setSun(10.5);
+  studioSun();    // default: flattering studio light; the slider engages the true solar path
   applyView(); updateCam();
   reshadow();
   document.getElementById('loading').style.opacity = '0';
@@ -715,16 +776,25 @@ function initScene() {
   animate();
 }
 
+// Studio light: archviz "cheat" sun from the SE that flatters the street facades.
+// Moving the slider switches to the physically-true Melbourne solar path.
+function studioSun() {
+  sun.position.set(52, 64, 58);                    // high SSE — front + east faces lit
+  sun.intensity = 2.25;
+  sun.color.set(0xfff1dc);
+  hemi.intensity = .4;
+  if (renderer) reshadow();
+}
 function setSun(hour) {
   const t = (hour - 7) / 12;
   const az = (90 - t * 180) * Math.PI / 180;       // E → N → W (southern hemisphere)
   const el = Math.sin(t * Math.PI) * 48 * Math.PI / 180 + .06;
   const R = 95;
   sun.position.set(R * Math.sin(az) * Math.cos(el), R * Math.sin(el), -R * Math.cos(az) * Math.cos(el));
-  sun.intensity = .6 + Math.sin(t * Math.PI) * 1.5;
+  sun.intensity = .8 + Math.sin(t * Math.PI) * 2.1;
   const warm = Math.pow(Math.abs(t - .5) * 2, 2);
   sun.color.setHSL(.09 - warm * .045, .55 + warm * .3, .82 - warm * .12);
-  hemi.intensity = .35 + Math.sin(t * Math.PI) * .3;
+  hemi.intensity = .22 + Math.sin(t * Math.PI) * .2;
   if (renderer) reshadow();
 }
 
@@ -746,7 +816,7 @@ function updateCam() {
 }
 function setView(v) {
   view = v;
-  if (v === 'exterior') { dist = 50; rotX = .33; rotY = -.65; tgt = { x: 0, y: 2.4, z: 0 }; }
+  if (v === 'exterior') { dist = 46; rotX = .27; rotY = -.7; tgt = { x: 0, y: 2.8, z: 0 }; }
   if (v === 'site') { dist = 96; rotX = .85; rotY = -.5; tgt = { x: 0, y: 0, z: -14 }; }
   if (v === 'ground') { dist = 40; rotX = 1.08; rotY = -.35; tgt = { x: 0, y: 0, z: -3 }; }
   if (v === 'upper') { dist = 40; rotX = 1.08; rotY = -.35; tgt = { x: 0, y: UY, z: -3 }; }

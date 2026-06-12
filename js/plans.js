@@ -27,9 +27,9 @@ const GROUND_ROOMS = [
   { l: 'Powder', u0: .2, v0: 9.8, u1: 2.0, v1: 11.6 },
   { l: 'Store', u0: 2.0, v0: 9.8, u1: 4.2, v1: 11.6 },
   { l: 'Hub · Meals', a: '19.8', u0: 7.4, v0: 7.6, u1: 12.4, v1: 11.6 },
-  { l: 'Family', a: '26.9', u0: .2, v0: 11.6, u1: 6.4, v1: 15.8 },
-  { l: 'Dining', a: '13.4', u0: 6.4, v0: 11.6, u1: 9.6, v1: 15.8 },
-  { l: 'Kitchen', a: '10.9', u0: 9.6, v0: 11.6, u1: 12.2, v1: 15.8 },
+  { l: 'Family', a: '30.4', u0: .2, v0: 11.6, u1: 6.4, v1: 16.5 },
+  { l: 'Dining', a: '15.7', u0: 6.4, v0: 11.6, u1: 9.6, v1: 16.5 },
+  { l: 'Kitchen', a: '12.7', u0: 9.6, v0: 11.6, u1: 12.2, v1: 16.5 },
   // west wing (u 12.4–19.0, v 2.5–16.5)
   { l: 'Garage', a: '37.8', u0: 12.6, v0: 2.5, u1: 18.8, v1: 8.6 },
   { l: 'Mud · Wudu', u0: 12.4, v0: 8.6, u1: 14.2, v1: 12.9 },
@@ -44,19 +44,21 @@ const UPPER_ROOMS = [
   { l: 'Bed 4', a: '14.6', u0: 8.6, v0: .2, u1: 12.2, v1: 4.2 },
   { l: 'Bath', u0: 8.6, v0: 4.2, u1: 11.0, v1: 7.0 },
   { l: 'WC', u0: 11.0, v0: 4.2, u1: 12.2, v1: 7.0 },
-  { l: 'Landing', u0: 4.2, v0: 4.2, u1: 8.6, v1: 11.8, stair: { u0: 4.3, v0: 6.6, u1: 5.7, v1: 10.8 } },
-  { l: 'Retreat', a: '15.8', u0: .8, v0: 8.4, u1: 5.2, v1: 11.8 },
-  { l: 'Gym · Flex', a: '17.6', u0: 8.6, v0: 7.0, u1: 12.2, v1: 11.8 },
-  { l: 'Master Bed', a: '19.6', u0: .8, v0: 11.8, u1: 5.8, v1: 15.8 },
-  { l: 'WIR', u0: 5.8, v0: 12.6, u1: 8.4, v1: 15.8 },
-  { l: 'Ensuite', a: '8.3', u0: 8.4, v0: 12.6, u1: 11.0, v1: 15.8 },
-  { l: 'Linen', u0: 11.0, v0: 12.6, u1: 12.4, v1: 15.8 },
+  { l: 'Landing', u0: 4.2, v0: 4.2, u1: 8.6, v1: 12.4, stair: { u0: 4.3, v0: 6.6, u1: 5.7, v1: 10.8 } },
+  { l: 'Retreat', a: '17.6', u0: .8, v0: 8.4, u1: 5.2, v1: 12.4 },
+  { l: 'Gym · Flex', a: '19.4', u0: 8.6, v0: 7.0, u1: 12.2, v1: 12.4 },
+  { l: 'Master Bed', a: '20.5', u0: .8, v0: 12.4, u1: 5.8, v1: 16.5 },
+  { l: 'WIR', u0: 5.8, v0: 13.2, u1: 8.4, v1: 16.5 },
+  { l: 'Ensuite', a: '8.6', u0: 8.4, v0: 13.2, u1: 11.0, v1: 16.5 },
+  { l: 'Linen', u0: 11.0, v0: 13.2, u1: 12.4, v1: 16.5 },
   { l: 'Bed 2', a: '19.2', u0: 13.0, v0: 2.5, u1: 18.4, v1: 6.4 },
   { l: 'Ens 2', u0: 12.4, v0: 6.4, u1: 14.8, v1: 9.1 },
   { l: 'Hall', u0: 14.8, v0: 6.4, u1: 19.0, v1: 9.1 },
+  { l: 'Media · Lounge', a: '21.4', u0: 12.4, v0: 9.1, u1: 19.0, v1: 12.7 },
+  { l: 'Bed 6', a: '17.2', u0: 13.2, v0: 12.7, u1: 19.0, v1: 15.9 },
 ];
-const GROUND_WINGS = [[0, 0, 12.4, 16.0], [12.4, 2.5, 19.0, 16.5]];
-const UPPER_WINGS = [[0.8, 0, 12.4, 16.0], [12.4, 2.5, 19.0, 9.1]];
+const GROUND_WINGS = [[0, 0, 12.4, 16.7], [12.4, 2.5, 19.0, 16.5]];
+const UPPER_WINGS = [[0.8, 0, 12.4, 16.7], [12.4, 2.5, 19.0, 15.9]];
 
 // ---------- svg helpers ----------
 const NS = 'http://www.w3.org/2000/svg';
@@ -111,7 +113,7 @@ function drawSitePlan(svg) {
   const drv = [[22.6, 3.4], [22.6, 7.4], [18.6, 7.0], [15.4, 5.2], [14.2, 2.5], [13.6, -1.6], [18.2, -1.6], [18.6, 2.5]].map(p => houseToSite(...p));
   poly(drv.map(X), { fill: '#6e6a62', stroke: '#85807a', 'stroke-width': 1 }, g);
   // open paved terrace, NE yard edge
-  const terr = [houseToSite(1.6, 16.05), houseToSite(8.4, 16.05), houseToSite(8.4, 18.3), houseToSite(1.6, 18.3)];
+  const terr = [houseToSite(1.6, 16.75), houseToSite(8.4, 16.75), houseToSite(8.4, 19.0), houseToSite(1.6, 19.0)];
   poly(terr.map(X), { fill: '#7c766c', opacity: .85 }, g);
 
   // existing house — dashed (demolish)
@@ -123,11 +125,11 @@ function drawSitePlan(svg) {
   const ec = DESIGN.footprintXY.east;
   const eMid = [(ec[0][0] + ec[2][0]) / 2, (ec[0][1] + ec[2][1]) / 2];
   txt(...X(eMid), 'NEW DWELLING', { fill: '#171a22', 'font-size': 13, 'font-weight': 700, 'text-anchor': 'middle', 'font-family': 'var(--mono)' }, g);
-  txt(...X([eMid[0], eMid[1] - 1.7]), '54 sq · 2 storey', { fill: '#555', 'font-size': 11, 'text-anchor': 'middle', 'font-family': 'var(--mono)' }, g);
+  txt(...X([eMid[0], eMid[1] - 1.7]), '568 m² · 61 sq · 2 storey', { fill: '#555', 'font-size': 10.5, 'text-anchor': 'middle', 'font-family': 'var(--mono)' }, g);
   const wc = DESIGN.footprintXY.west;
   txt(...X([(wc[0][0] + wc[2][0]) / 2, (wc[0][1] + wc[2][1]) / 2]), 'GARAGE', { fill: '#444', 'font-size': 10, 'text-anchor': 'middle', 'font-family': 'var(--mono)' }, g);
   // north yard label
-  txt(...X(houseToSite(6, 18.0)), 'N yard 49 m²', { fill: '#9fd08a', 'font-size': 10.5, 'text-anchor': 'middle', 'font-family': 'var(--mono)' }, g);
+  txt(...X(houseToSite(6, 18.6)), 'N yard ≈61 m²', { fill: '#9fd08a', 'font-size': 10.5, 'text-anchor': 'middle', 'font-family': 'var(--mono)' }, g);
 
   // setback dims
   function dim(a, b, label, dx = 0, dy = -4) {
@@ -140,7 +142,7 @@ function drawSitePlan(svg) {
   dim(houseToSite(6.5, 0), off(houseToSite(6.5, 0), HF.vIn, -8.06), '8.06 m');
   dim(houseToSite(19, 7), off(houseToSite(19, 7), HF.uIn, 2.0), '2.0 m', -20);
   dim(houseToSite(0, 8), off(houseToSite(0, 8), HF.uIn, -1.2), '1.2 m', 20);
-  dim(houseToSite(6.5, 16.0), off(houseToSite(6.5, 16.0), HF.vIn, 3.9), '3.9 m');
+  dim(houseToSite(11.5, 16.7), off(houseToSite(11.5, 16.7), HF.vIn, 3.3), '3.3 m');
 
   // boundary labels
   const L = SITE.lot;
@@ -166,7 +168,7 @@ function drawSitePlan(svg) {
   const sx = 40, sy = H - 34;
   el('line', { x1: sx, y1: sy, x2: sx + 10 * sc, y2: sy, stroke: '#aab', 'stroke-width': 2 }, g);
   [0, 5, 10].forEach(m => { el('line', { x1: sx + m * sc, y1: sy - 5, x2: sx + m * sc, y2: sy + 5, stroke: '#aab', 'stroke-width': 1.5 }, g); txt(sx + m * sc, sy + 18, m + ' m', { fill: '#aab', 'font-size': 10, 'text-anchor': 'middle', 'font-family': 'var(--mono)' }, g); });
-  const leg = [['#efe7d8', 'New dwelling · roofed 290.8 m²'], ['#c4593a', 'Existing house — demolish'], ['#6e6a62', 'Driveway from Pimpala Ct (50 m²)'], ['#3d6134', 'Garden area 338 m² = 49.8 %'], ['#333b4e', 'Neighbouring buildings (surveyed)']];
+  const leg = [['#efe7d8', 'New dwelling · roofed 299.5 m²'], ['#c4593a', 'Existing house — demolish'], ['#6e6a62', 'Driveway from Pimpala Ct (50 m²)'], ['#3d6134', 'Garden area 329 m² = 48.5 %'], ['#333b4e', 'Neighbouring buildings (surveyed)']];
   leg.forEach((it, i) => {
     el('rect', { x: 40, y: 26 + i * 21, width: 13, height: 13, fill: it[0], rx: 2 }, g);
     txt(60, 37 + i * 21, it[1], { fill: '#c9cfdb', 'font-size': 11.5, 'font-family': 'var(--mono)' }, g);
@@ -178,10 +180,10 @@ function drawSitePlan(svg) {
 // ============================================================
 function drawFloorPlan(svg, rooms, wings, title, totalLabel) {
   svg.innerHTML = '';
-  const sc = 35, padL = 72, padT = 74;
-  const W = 19.0 * sc + padL + 64, H = 16.5 * sc + padT + 88;
+  const sc = 35, padL = 72, padT = 74, VMAX = 16.7;
+  const W = 19.0 * sc + padL + 64, H = VMAX * sc + padT + 88;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  const X = (u, v) => [padL + (19.0 - u) * sc, padT + (16.5 - v) * sc];
+  const X = (u, v) => [padL + (19.0 - u) * sc, padT + (VMAX - v) * sc];
   const g = el('g', {}, svg);
 
   for (const w of wings) {
