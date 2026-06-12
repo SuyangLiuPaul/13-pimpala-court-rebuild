@@ -671,7 +671,7 @@ function initScene() {
   const heroEl = document.getElementById('hero');
   camera = new THREE.PerspectiveCamera(42, heroEl.clientWidth / heroEl.clientHeight, .1, 500);
   renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c3d'), antialias: true });
-  renderer.setSize(heroEl.clientWidth, heroEl.clientHeight);
+  renderer.setSize(heroEl.clientWidth, heroEl.clientHeight, false); // CSS keeps the canvas at 100%
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -701,6 +701,16 @@ function initScene() {
     heroVisible = es[0].isIntersecting;
     if (heroVisible) invalidate();
   }, { threshold: .02 }).observe(heroEl);
+
+  // iOS Safari can drop the WebGL context under memory pressure — recover gracefully
+  renderer.domElement.addEventListener('webglcontextlost', e => {
+    e.preventDefault();
+    document.getElementById('loading').style.opacity = '1';
+  }, false);
+  renderer.domElement.addEventListener('webglcontextrestored', () => {
+    document.getElementById('loading').style.opacity = '0';
+    reshadow();
+  }, false);
 
   animate();
 }
@@ -815,10 +825,19 @@ function animate() {
   if (autoRot) { rotY += .002; updateCam(); }
   if (needsRender) { renderer.render(scene, camera); needsRender = false; }
 }
+// Debounced resize: iOS Safari fires resize continuously while the URL bar
+// collapses during scroll — resizing the GL canvas every frame janks the page.
+let resizeT = 0, lastW = 0, lastH = 0;
 addEventListener('resize', () => {
-  const heroEl = document.getElementById('hero');
-  camera.aspect = heroEl.clientWidth / heroEl.clientHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(heroEl.clientWidth, heroEl.clientHeight);
-  invalidate();
+  clearTimeout(resizeT);
+  resizeT = setTimeout(() => {
+    const heroEl = document.getElementById('hero');
+    const w = heroEl.clientWidth, h = heroEl.clientHeight;
+    if (w === lastW && h === lastH) return;
+    lastW = w; lastH = h;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h, false);
+    reshadow();
+  }, 150);
 });
