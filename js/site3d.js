@@ -952,8 +952,36 @@ function studioSun() {
   hemi.intensity = .4;
   if (renderer) reshadow();
 }
-// post-processing: SSAO ambient occlusion (desktop) + FXAA, composited on demand.
-// Falls back to a plain render if the addon scripts failed to load.
+// filmic colour grade: gentle contrast S-curve, split-tone (warm shadows /
+// cool highlights), a touch of saturation, and a soft vignette — the archviz
+// "rendered photo" look. Self-contained shader, no extra CDN dependency.
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    contrast: { value: 1.07 },
+    saturation: { value: 1.09 },
+    warmth: { value: 0.045 },
+    vignette: { value: 0.80 },
+  },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: [
+    'uniform sampler2D tDiffuse; uniform float contrast, saturation, warmth, vignette; varying vec2 vUv;',
+    'void main(){',
+    '  vec3 c = texture2D(tDiffuse, vUv).rgb;',
+    '  c = (c - 0.5) * contrast + 0.5;',                                  // contrast around mid-grey
+    '  float l = dot(c, vec3(0.299,0.587,0.114));',
+    '  c = mix(vec3(l), c, saturation);',                                 // saturation
+    '  c += warmth * vec3(1.0,0.55,-0.45) * (1.0 - l);',                  // warm shadows
+    '  c += warmth * vec3(-0.35,0.05,0.5) * l * 0.6;',                    // cool highlights
+    '  float d = length(vUv - 0.5) * 1.35;',                             // vignette
+    '  c *= mix(1.0, 0.80, smoothstep(0.55, vignette + 0.45, d));',
+    '  gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);',
+    '}',
+  ].join('\n'),
+};
+
+// post-processing: SSAO ambient occlusion (desktop) + colour grade + FXAA,
+// composited on demand. Falls back to a plain render if addons failed to load.
 let useComposer = false;
 function setupComposer(w, h, desktop) {
   if (typeof THREE.EffectComposer !== 'function' || typeof THREE.RenderPass !== 'function') return;
@@ -969,10 +997,13 @@ function setupComposer(w, h, desktop) {
       ssaoPass.maxDistance = 0.10;
       composer.addPass(ssaoPass);
     }
-    if (typeof THREE.ShaderPass === 'function' && THREE.FXAAShader) {
-      fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
-      fxaaPass.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
-      composer.addPass(fxaaPass);
+    if (typeof THREE.ShaderPass === 'function') {
+      composer.addPass(new THREE.ShaderPass(GradeShader));   // colour grade + vignette
+      if (THREE.FXAAShader) {
+        fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
+        fxaaPass.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
+        composer.addPass(fxaaPass);
+      }
     }
     useComposer = true;
   } catch (e) { useComposer = false; }
