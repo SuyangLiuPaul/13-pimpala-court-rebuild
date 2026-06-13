@@ -562,6 +562,11 @@ function buildLot() {
   // a few architectural clipped shrubs flanking the entry porch + along the front
   [[5.0, -0.9], [6.6, -0.9], [9.5, -0.35], [11.6, -0.35], [-0.3, 3.0], [-0.3, 9.0]].forEach(([u, v], i) => shrub(lotG, u, v, .35 + (i % 2) * .12));
 
+  // ---- kerbside 3-bin set tucked beside the garage (lived-in scale prop) ----
+  wheelieBin(lotG, 13.0, 0.4, 0xb23a2a, Math.PI);   // red lid — general waste
+  wheelieBin(lotG, 13.6, 0.4, 0xddc24a, Math.PI);   // yellow lid — recycling
+  wheelieBin(lotG, 14.2, 0.4, 0x5a9440, Math.PI);   // green lid — FOGO
+
   // ---- electric car parked on the driveway + EV charge pedestal ----
   evCar(lotG, 16.3, 0.4, MAT.carBlue || MAT.steel);
   // wall charger box near the garage door
@@ -573,6 +578,23 @@ function buildLot() {
   // charge cable (thin curved tube from charger to the car port)
   const cab = new THREE.Mesh(new THREE.TorusGeometry(.5, .025, 6, 12, Math.PI), new THREE.MeshStandardMaterial({ color: 0x111316, roughness: .7 }));
   const cabp = hw(14.2, 1.0); cab.position.set(cabp[0], .55, cabp[1]); cab.rotation.set(Math.PI / 2, ROT, 0); lotG.add(cab);
+}
+
+// a kerbside wheelie bin (Australian 3-bin system: general / recycling / FOGO)
+const binBody = new THREE.MeshStandardMaterial({ color: 0x2a2c2e, roughness: .72 });
+function wheelieBin(g, u, v, lidHex, rot) {
+  const o = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(.48, .92, .56), binBody);
+  body.position.y = .5; body.castShadow = true; body.receiveShadow = true; o.add(body);
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(.51, .08, .6), new THREE.MeshStandardMaterial({ color: lidHex, roughness: .55 }));
+  lid.position.set(0, .98, -.02); lid.rotation.x = -.06; lid.castShadow = true; o.add(lid);
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(.46, .05, .05), binBody);
+  bar.position.set(0, .96, .3); o.add(bar);                       // front lift bar
+  [-.18, .18].forEach(wx => {
+    const wl = new THREE.Mesh(new THREE.CylinderGeometry(.085, .085, .06, 10), MAT.fascia);
+    wl.rotation.z = Math.PI / 2; wl.position.set(wx, .085, .24); o.add(wl);
+  });
+  const p = hw(u, v); o.position.set(p[0], 0, p[1]); o.rotation.y = (rot || 0) + ROT; g.add(o);
 }
 
 // a clipped architectural shrub (low maintenance, not a flower bed)
