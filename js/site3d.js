@@ -274,15 +274,34 @@ function panel(g, x0, x1, y0, y1, T, mat) {
   m.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0);
   m.castShadow = true; m.receiveShadow = true; g.add(m);
 }
+// Window with a recessed reveal: light rendered lining around the opening
+// (direction-agnostic — full wall depth), a slim aluminium frame, glazing bars,
+// and a projecting sill. The centred glass sits ~T/2 behind each face so the
+// opening reads as a real deep reveal instead of a flat sticker.
 function glazing(g, x0, x1, y0, y1, T, sillOut) {
-  const w = x1 - x0, h = y1 - y0;
-  const gl = new THREE.Mesh(new THREE.BoxGeometry(w - .1, h - .1, T * .25), MAT.glass);
-  gl.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0); g.add(gl);
-  const f = .07;
-  panel(g, x0, x1, y0, y0 + f, T * 1.12, MAT.frame); panel(g, x0, x1, y1 - f, y1, T * 1.12, MAT.frame);
-  panel(g, x0, x0 + f, y0, y1, T * 1.12, MAT.frame); panel(g, x1 - f, x1, y0, y1, T * 1.12, MAT.frame);
-  if (w > 1.9) panel(g, (x0 + x1) / 2 - f / 2, (x0 + x1) / 2 + f / 2, y0, y1, T * 1.12, MAT.frame);
-  if (sillOut) B(g, w + .12, .07, T * 1.5, (x0 + x1) / 2, y0 - .035, 0, MAT.render, false); // sill
+  const w = x1 - x0, h = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const box = (bw, bh, bd, x, y, z, m, cast) => {
+    const e = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), m);
+    e.position.set(x, y, z); e.castShadow = cast !== false; e.receiveShadow = true; g.add(e); return e;
+  };
+  const lin = .055;                                   // reveal lining thickness
+  box(w, lin, T * .94, cx, y1 - lin / 2, 0, MAT.render, false);        // head reveal
+  box(w, lin, T * .94, cx, y0 + lin / 2, 0, MAT.render, false);        // sill reveal
+  box(lin, h - lin * 2, T * .94, x0 + lin / 2, cy, 0, MAT.render, false); // left jamb
+  box(lin, h - lin * 2, T * .94, x1 - lin / 2, cy, 0, MAT.render, false); // right jamb
+  // centred (recessed) glass
+  box(w - lin * 2 - .02, h - lin * 2 - .02, T * .16, cx, cy, 0, MAT.glass, false);
+  // slim dark frame on the glass plane
+  const f = .05;
+  box(w - lin * 2, f, T * .34, cx, y1 - lin - f / 2, 0, MAT.frame, false);
+  box(w - lin * 2, f, T * .34, cx, y0 + lin + f / 2, 0, MAT.frame, false);
+  box(f, h - lin * 2, T * .34, x0 + lin + f / 2, cy, 0, MAT.frame, false);
+  box(f, h - lin * 2, T * .34, x1 - lin - f / 2, cy, 0, MAT.frame, false);
+  // glazing bars on larger windows
+  if (w > 1.5) box(f * .8, h - lin * 2, T * .3, cx, cy, 0, MAT.frame, false);
+  if (h > 1.5) box(w - lin * 2, f * .8, T * .3, cx, cy, 0, MAT.frame, false);
+  // projecting render sill
+  if (sillOut) box(w + .14, .07, T * 1.4, cx, y0 - .035, 0, MAT.render);
 }
 function wallRun(group, a, b, H, T, mat, openings, yBase = 0) {
   const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
