@@ -185,7 +185,10 @@ function hookReveal() {
 }
 
 // ---- boot ----
-renderAll();
-initScene();
-bindCanvasControls();
-hookSpy();
+// each step is isolated so a failure in one (e.g. WebGL/3D on a constrained
+// device) never leaves the language toggle or the HUD controls unbound.
+function safe(label, fn) { try { fn(); } catch (e) { console.error('[boot] ' + label, e); } }
+safe('renderAll', renderAll);
+safe('initScene', initScene);
+safe('bindCanvasControls', bindCanvasControls);
+safe('hookSpy', hookSpy);

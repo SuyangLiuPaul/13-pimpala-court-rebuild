@@ -19,11 +19,20 @@ const reshadow = () => { renderer.shadowMap.needsUpdate = true; needsRender = tr
 
 // ---------- real Melbourne time + sun position ----------
 const SITE_LL = SITE.meta.originLatLon;   // [lat, lon] of the lot
-// Australia/Melbourne UTC offset (hours) for a given instant — handles AEST/AEDT automatically
+// Australia/Melbourne UTC offset (hours) for a given instant — handles AEST/AEDT
+// automatically. Uses formatToParts (NOT new Date(toLocaleString), which Safari
+// often parses as Invalid Date → NaN) so it is robust on iOS.
 function melbOffsetHours(d) {
-  const u = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
-  const m = new Date(d.toLocaleString('en-US', { timeZone: 'Australia/Melbourne' }));
-  return Math.round((m - u) / 3.6e6 * 2) / 2;
+  try {
+    const p = {};
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Australia/Melbourne', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      .formatToParts(d).forEach(x => { p[x.type] = x.value; });
+    let hh = +p.hour; if (hh === 24) hh = 0;
+    const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, hh, +p.minute, +p.second);
+    const off = (asUTC - d.getTime()) / 3.6e6;
+    return Number.isFinite(off) ? Math.round(off * 2) / 2 : 10;
+  } catch (e) { return 10; }   // AEST fallback
 }
 // current Melbourne wall-clock, as decimal hours + a HH:MM string + weekday
 function melbNow() {
@@ -1626,6 +1635,29 @@ function setView(v) {
 
 // canvas + slider: bind ONCE (never re-bound on language switch)
 function bindCanvasControls() {
+  // ---- time-of-day clock — bound FIRST and independently of the 3D canvas, so
+  // it works even if WebGL init had trouble on a constrained device ----
+  const slider = document.getElementById('sunSlider');
+  const sunLabel = document.getElementById('sunLabel'), nowBtn = document.getElementById('nowBtn');
+  const fmtHM = h => { const m = Math.round(h * 60); return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
+  const paintClock = () => { if (sunLabel) sunLabel.textContent = fmtHM(timeHour); if (nowBtn) nowBtn.classList.toggle('active', liveClock); };
+  const applyTime = h => { timeHour = h; try { setTime(h); } catch (e) { /* scene not ready */ } paintClock(); };
+  if (slider) {
+    slider.min = 0; slider.max = 24; slider.step = 0.25; slider.value = timeHour;
+    slider.addEventListener('input', function () { liveClock = false; applyTime(parseFloat(this.value)); });
+  }
+  if (nowBtn) nowBtn.addEventListener('click', () => { liveClock = true; const h = melbNow().hour; if (slider) slider.value = h; applyTime(h); });
+  paintClock();
+  // while in live mode, advance with the real Melbourne clock (so "now" stays now)
+  clearInterval(clockTimer);
+  clockTimer = setInterval(() => {
+    if (!liveClock || !heroVisible) return;
+    const h = melbNow().hour; if (Math.abs(h - timeHour) < 0.008) return;
+    if (slider) slider.value = h; applyTime(h);
+  }, 30000);
+
+  // ---- camera drag — needs the WebGL canvas; skip gracefully if absent ----
+  if (!renderer || !renderer.domElement) return;
   const el = renderer.domElement;
   let drag = false, px = 0, py = 0;
   el.addEventListener('mousedown', e => { drag = true; px = e.clientX; py = e.clientY; });
@@ -1641,16 +1673,32 @@ function bindCanvasControls() {
     e.preventDefault();
     dist += e.deltaY * .05; dist = Math.max(12, Math.min(140, dist)); updateCam();
   }, { passive: false });
-  // touch: one finger scrolls the page; two fingers rotate + pinch-zoom the model
-  let td = 0, tmx = 0, tmy = 0;
+  // touch: one finger rotates the model (with a small dead-zone so a clear
+  // vertical swipe still scrolls the page); two fingers pinch-zoom
+  let td = 0, tmx = 0, tmy = 0, oneActive = false, sx = 0, sy = 0, rotating = false;
   el.addEventListener('touchstart', e => {
-    if (e.touches.length === 2) {
+    if (e.touches.length === 1) { oneActive = true; rotating = false; sx = px = e.touches[0].clientX; sy = py = e.touches[0].clientY; }
+    else if (e.touches.length === 2) {
+      oneActive = false;
       td = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
       tmx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       tmy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     }
   }, { passive: true });
   el.addEventListener('touchmove', e => {
+    if (e.touches.length === 1 && oneActive) {
+      const x = e.touches[0].clientX, y = e.touches[0].clientY;
+      if (!rotating) {                                   // decide: rotate vs let the page scroll
+        const dx = Math.abs(x - sx), dy = Math.abs(y - sy);
+        if (dx < 8 && dy < 8) return;                    // dead-zone
+        if (dy > dx * 1.3) { oneActive = false; return; } // mostly-vertical → page scroll
+        rotating = true;
+      }
+      e.preventDefault();
+      rotY -= (x - px) * .006; rotX += (y - py) * .006;
+      rotX = Math.max(.06, Math.min(1.45, rotX)); px = x; py = y; updateCam();
+      return;
+    }
     if (e.touches.length !== 2) return;
     e.preventDefault();
     const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
@@ -1661,23 +1709,7 @@ function bindCanvasControls() {
     rotX = Math.max(.06, Math.min(1.45, rotX)); tmx = mx; tmy = my;
     updateCam();
   }, { passive: false });
-
-  // time-of-day clock: full 24 h, defaults to live Melbourne time, "NOW" re-syncs
-  const slider = document.getElementById('sunSlider');
-  const sunLabel = document.getElementById('sunLabel'), nowBtn = document.getElementById('nowBtn');
-  const fmtHM = h => { const m = Math.round(h * 60); return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
-  const paintClock = () => { if (sunLabel) sunLabel.textContent = fmtHM(timeHour); if (nowBtn) nowBtn.classList.toggle('active', liveClock); };
-  slider.min = 0; slider.max = 24; slider.step = 0.25; slider.value = timeHour;
-  slider.addEventListener('input', function () { liveClock = false; setTime(parseFloat(this.value)); paintClock(); });
-  if (nowBtn) nowBtn.addEventListener('click', () => { liveClock = true; timeHour = melbNow().hour; slider.value = timeHour; setTime(timeHour); paintClock(); });
-  paintClock();
-  // while in live mode, advance with the real Melbourne clock (so "now" stays now)
-  clearInterval(clockTimer);
-  clockTimer = setInterval(() => {
-    if (!liveClock || !heroVisible) return;
-    const h = melbNow().hour; if (Math.abs(h - timeHour) < 0.008) return;
-    timeHour = h; slider.value = timeHour; setTime(timeHour); paintClock();
-  }, 30000);
+  el.addEventListener('touchend', e => { if (e.touches.length === 0) { oneActive = false; rotating = false; } }, { passive: true });
 }
 
 // HUD buttons: re-bound after every language re-render (buttons are recreated)
