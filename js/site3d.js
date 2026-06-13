@@ -1018,6 +1018,12 @@ function setupComposer(w, h, desktop) {
       ssaoPass.maxDistance = 0.10;
       composer.addPass(ssaoPass);
     }
+    // subtle photographic glow on the brightest highlights (sky, sunlit render,
+    // solar/glass speculars) — low strength + high threshold so it never washes out
+    if (typeof THREE.UnrealBloomPass === 'function') {
+      const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(w, h), 0.26, 0.55, 0.82);
+      composer.addPass(bloom);
+    }
     if (typeof THREE.ShaderPass === 'function') {
       composer.addPass(new THREE.ShaderPass(GradeShader));   // colour grade + vignette
       if (THREE.FXAAShader) {
