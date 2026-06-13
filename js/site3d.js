@@ -4,7 +4,7 @@
 // House frame: u 0(east)→19(west), v 0(front/south)→16+(rear)
 // World: x = site east, z = −site north.
 // ============================================================
-let scene, camera, renderer, sun, hemi;
+let scene, camera, renderer, sun, hemi, composer, fxaaPass, ssaoPass;
 let extG, roofG, siteCtxG, lotG, intGround, intUpper;
 let view = 'exterior', autoRot = false, roofOn = true;
 let rotY = -0.7, rotX = 0.27, dist = 46, tgt = { x: 0, y: 2.8, z: -2 };
@@ -22,20 +22,52 @@ function canvasTex(w, h, draw, rx = 1, ry = 1) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.anisotropy = 4;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); t.anisotropy = 8;
+  return t;
+}
+// Derive a tangent-space normal map from a colour texture's luminance (Sobel height field).
+function normalTex(colorTex, strength) {
+  const srcC = colorTex.image, w = srcC.width, h = srcC.height;
+  const src = srcC.getContext('2d').getImageData(0, 0, w, h).data;
+  const out = document.createElement('canvas'); out.width = w; out.height = h;
+  const octx = out.getContext('2d'), dst = octx.createImageData(w, h);
+  const L = (x, y) => { x = (x + w) % w; y = (y + h) % h; const i = (y * w + x) * 4; return (src[i] * .299 + src[i + 1] * .587 + src[i + 2] * .114) / 255; };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (L(x - 1, y) - L(x + 1, y)) * strength;
+    const dy = (L(x, y - 1) - L(x, y + 1)) * strength;
+    const len = Math.hypot(dx, dy, 1), i = (y * w + x) * 4;
+    dst.data[i] = (dx / len * .5 + .5) * 255;
+    dst.data[i + 1] = (dy / len * .5 + .5) * 255;
+    dst.data[i + 2] = (1 / len * .5 + .5) * 255;
+    dst.data[i + 3] = 255;
+  }
+  octx.putImageData(dst, 0, 0);
+  const t = new THREE.CanvasTexture(out);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.copy(colorTex.repeat); t.anisotropy = 8;
   return t;
 }
 const TEX = {};
 function makeTextures() {
-  TEX.brick = canvasTex(256, 256, (g, w, h) => {
-    g.fillStyle = '#8d8377'; g.fillRect(0, 0, w, h);
-    const bw = 42, bh = 16;
+  TEX.brick = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#6f655a'; g.fillRect(0, 0, w, h);     // recessed mortar (dark)
+    const bw = 84, bh = 32;
     for (let y = 0, r = 0; y < h; y += bh, r++) for (let x = -bw; x < w + bw; x += bw) {
-      const ox = (r % 2) * bw / 2, tone = 118 + Math.floor(Math.random() * 34);
-      g.fillStyle = `rgb(${tone},${tone - 9},${tone - 22})`;
-      g.fillRect(x + ox + 1.5, y + 1.5, bw - 3, bh - 3);
+      const ox = (r % 2) * bw / 2;
+      const base = 120 + Math.floor(Math.random() * 36);
+      // brick face with a soft inner gradient so it reads slightly proud of the mortar
+      const bx = x + ox + 3, by = y + 3, bwi = bw - 6, bhi = bh - 6;
+      const grd = g.createLinearGradient(bx, by, bx, by + bhi);
+      grd.addColorStop(0, `rgb(${base + 8},${base - 2},${base - 14})`);
+      grd.addColorStop(1, `rgb(${base - 10},${base - 19},${base - 30})`);
+      g.fillStyle = grd; g.fillRect(bx, by, bwi, bhi);
+      // subtle clinker speckle on the face
+      for (let s = 0; s < 18; s++) {
+        const t = base + (Math.random() - .5) * 40;
+        g.fillStyle = `rgba(${t},${t - 9},${t - 20},.5)`;
+        g.fillRect(bx + Math.random() * bwi, by + Math.random() * bhi, 2, 2);
+      }
     }
-  }, 3.2, 1.6);
+  }, 3.0, 1.5);
   TEX.render = canvasTex(128, 128, (g, w, h) => {
     g.fillStyle = '#ece6da'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 1800; i++) {
@@ -43,14 +75,23 @@ function makeTextures() {
       g.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4);
     }
   }, 4, 4);
-  TEX.roof = canvasTex(256, 256, (g, w, h) => {
-    g.fillStyle = '#3d4046'; g.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y += 21) {
-      g.fillStyle = 'rgba(0,0,0,.38)'; g.fillRect(0, y, w, 4);
-      g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(0, y + 4, w, 2);
-      for (let x = 0; x < w; x += 32) { g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(x + (y % 42 ? 16 : 0), y + 4, 2, 17); }
+  TEX.roof = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#41454c'; g.fillRect(0, 0, w, h);
+    const th = 44;                                       // concrete-tile course height
+    for (let y = 0, r = 0; y < h; y += th, r++) {
+      // each tile course: shaded body + a raised leading lip + deep shadow gap below
+      const grd = g.createLinearGradient(0, y, 0, y + th);
+      grd.addColorStop(0, '#4b4f57'); grd.addColorStop(.82, '#3a3d44'); grd.addColorStop(1, '#2a2c31');
+      g.fillStyle = grd; g.fillRect(0, y, w, th);
+      g.fillStyle = 'rgba(255,255,255,.10)'; g.fillRect(0, y + 2, w, 3);   // lip highlight
+      g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, y + th - 4, w, 4);     // shadow gap
+      // vertical tile joints, offset each course
+      for (let x = 0; x < w; x += 64) {
+        g.fillStyle = 'rgba(0,0,0,.32)'; g.fillRect(x + (r % 2 ? 32 : 0), y + 4, 3, th - 7);
+        g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(x + (r % 2 ? 35 : 3), y + 4, 1, th - 7);
+      }
     }
-  }, 4, 4);
+  }, 5, 5);
   TEX.grass = canvasTex(256, 256, (g, w, h) => {
     g.fillStyle = '#5d8748'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 5200; i++) {
@@ -116,6 +157,15 @@ function makeTextures() {
       g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(0, y + 5, w, 3);
     }
   }, 1, 1);
+  TEX.pebble = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#8a847a'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 2600; i++) {
+      const v = 120 + Math.random() * 90, r = 2 + Math.random() * 3.5;
+      g.fillStyle = `rgb(${v},${v - 6},${v - 16})`;
+      g.beginPath(); g.arc(Math.random() * w, Math.random() * h, r, 0, 7); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.12)'; g.beginPath(); g.arc(Math.random() * w, Math.random() * h, 1.2, 0, 7); g.fill();
+    }
+  }, 2, 2);
   TEX.conc = canvasTex(128, 128, (g, w, h) => {
     g.fillStyle = '#b6b1a7'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 1200; i++) {
@@ -143,6 +193,7 @@ function makeMaterials() {
     asphalt: M({ map: TEX.asphalt, roughness: .96 }),
     agg: M({ map: TEX.agg, roughness: .92 }),
     paver: M({ map: TEX.paver, roughness: .9 }),
+    pebble: M({ map: TEX.pebble, roughness: .95 }),
     conc: M({ map: TEX.conc, roughness: .92 }),
     fence: M({ map: TEX.fence, roughness: .95 }),
     nbr: M({ color: 0xbdb5a8, roughness: .95 }),
@@ -172,17 +223,23 @@ function makeMaterials() {
     carGlass: M({ color: 0x1a262e, roughness: .12, metalness: .5 }),
     tyre: M({ color: 0x14161a, roughness: .85 }),
   };
-  // surface relief — reuse colour maps as bump maps (cheap, effective)
-  MAT.brick.bumpMap = TEX.brick; MAT.brick.bumpScale = .015;
-  MAT.roof.bumpMap = TEX.roof; MAT.roof.bumpScale = .03;
-  MAT.render.bumpMap = TEX.render; MAT.render.bumpScale = .006;
-  MAT.agg.bumpMap = TEX.agg; MAT.agg.bumpScale = .012;
-  MAT.fence.bumpMap = TEX.fence; MAT.fence.bumpScale = .02;
+  // proper tangent-space normal maps (real surface relief, not a flat box)
+  const NV = (s) => new THREE.Vector2(s, s);
+  const nm = (mat, tex, str, scale) => { mat.normalMap = normalTex(tex, str); mat.normalScale = NV(scale); };
+  nm(MAT.brick, TEX.brick, 14, .85);     // deep mortar joints
+  nm(MAT.roof, TEX.roof, 12, 1.0);       // tile steps
+  nm(MAT.render, TEX.render, 4, .25);    // fine acrylic-render tooth
+  nm(MAT.agg, TEX.agg, 8, .55);          // exposed-aggregate pebbles
+  nm(MAT.paver, TEX.paver, 9, .6);       // paver joints
+  nm(MAT.fence, TEX.fence, 8, .5);       // paling gaps
+  nm(MAT.grass, TEX.grass, 6, .5);
+  nm(MAT.lawn, TEX.lawn, 6, .5);
+  nm(MAT.conc, TEX.conc, 4, .25);
   // keep IBL subtle on matte surfaces so sun/shadow contrast survives;
   // strong only on glass and metals (default envMapIntensity is 1.0 — set explicitly)
   for (const k in MAT) {
     if (k === 'glass') continue;
-    MAT[k].envMapIntensity = (MAT[k].metalness && MAT[k].metalness > .4) ? .85 : .25;
+    MAT[k].envMapIntensity = (MAT[k].metalness && MAT[k].metalness > .4) ? .85 : .3;
   }
 }
 
@@ -447,6 +504,13 @@ function buildLot() {
   B(cl, 2.1, .03, 1.3, 0, 1.55, 0, MAT.steel, false);
   const cp = hw(10.8, 17.5); cl.position.set(cp[0], 0, cp[1]); lotG.add(cl);
 
+  // ---- low-maintenance pebble foundation strip (no garden beds) + clipped shrubs ----
+  flatPoly(lotG, [[0, -.55], [12.4, -.55], [12.4, 0], [0, 0]].map(p => hw(...p)), 0, .04, MAT.pebble, .6);   // front strip
+  flatPoly(lotG, [[-.55, 0], [0, 0], [0, 16.7], [-.55, 16.7]].map(p => hw(...p)), 0, .04, MAT.pebble, .6);   // east strip
+  flatPoly(lotG, [[0, 16.7], [12.4, 16.7], [12.4, 17.0], [0, 17.0]].map(p => hw(...p)), 0, .04, MAT.pebble, .6); // rear strip
+  // a few architectural clipped shrubs flanking the entry porch + along the front
+  [[5.0, -0.9], [6.6, -0.9], [9.5, -0.35], [11.6, -0.35], [-0.3, 3.0], [-0.3, 9.0]].forEach(([u, v], i) => shrub(lotG, u, v, .35 + (i % 2) * .12));
+
   // ---- electric car parked on the driveway + EV charge pedestal ----
   evCar(lotG, 16.3, 0.4, MAT.carBlue || MAT.steel);
   // wall charger box near the garage door
@@ -458,6 +522,17 @@ function buildLot() {
   // charge cable (thin curved tube from charger to the car port)
   const cab = new THREE.Mesh(new THREE.TorusGeometry(.5, .025, 6, 12, Math.PI), new THREE.MeshStandardMaterial({ color: 0x111316, roughness: .7 }));
   const cabp = hw(14.2, 1.0); cab.position.set(cabp[0], .55, cabp[1]); cab.rotation.set(Math.PI / 2, ROT, 0); lotG.add(cab);
+}
+
+// a clipped architectural shrub (low maintenance, not a flower bed)
+function shrub(g, u, v, s) {
+  const o = new THREE.Group();
+  for (let i = 0; i < 3; i++) {
+    const b = new THREE.Mesh(new THREE.IcosahedronGeometry(s * (1 - i * .12), 1), i % 2 ? MAT.leaf : MAT.leaf2);
+    b.position.set((i - 1) * s * .35, s * .7 + i * s * .18, (i % 2 ? .12 : -.1) * s);
+    b.scale.y = .82; b.castShadow = true; b.receiveShadow = true; o.add(b);
+  }
+  const p = hw(u, v); o.position.set(p[0], 0, p[1]); g.add(o);
 }
 
 // a sleeker electric car (rounded body, light colour, charge port)
@@ -807,7 +882,8 @@ function initScene() {
   scene.fog = new THREE.Fog(0xc3d2dc, 130, 320);
 
   const heroEl = document.getElementById('hero');
-  camera = new THREE.PerspectiveCamera(38, heroEl.clientWidth / heroEl.clientHeight, .1, 500);
+  // tighter near/far so SSAO + shadow depth precision is usable at house scale
+  camera = new THREE.PerspectiveCamera(38, heroEl.clientWidth / heroEl.clientHeight, .4, 280);
   renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c3d'), antialias: true });
   renderer.setSize(heroEl.clientWidth, heroEl.clientHeight, false); // CSS keeps the canvas at 100%
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
@@ -845,6 +921,7 @@ function initScene() {
   studioSun();    // default: flattering studio light; the slider engages the true solar path
   applyView(); updateCam();
   reshadow();
+  setupComposer(heroEl.clientWidth, heroEl.clientHeight, fineShadows);
   document.getElementById('loading').style.opacity = '0';
 
   // pause rendering when the hero is off-screen
@@ -875,6 +952,36 @@ function studioSun() {
   hemi.intensity = .4;
   if (renderer) reshadow();
 }
+// post-processing: SSAO ambient occlusion (desktop) + FXAA, composited on demand.
+// Falls back to a plain render if the addon scripts failed to load.
+let useComposer = false;
+function setupComposer(w, h, desktop) {
+  if (typeof THREE.EffectComposer !== 'function' || typeof THREE.RenderPass !== 'function') return;
+  try {
+    const pr = renderer.getPixelRatio();
+    composer = new THREE.EffectComposer(renderer);
+    composer.setSize(w, h);
+    composer.addPass(new THREE.RenderPass(scene, camera));
+    if (desktop && typeof THREE.SSAOPass === 'function') {
+      ssaoPass = new THREE.SSAOPass(scene, camera, w, h);
+      ssaoPass.kernelRadius = 5;
+      ssaoPass.minDistance = 0.0015;
+      ssaoPass.maxDistance = 0.10;
+      composer.addPass(ssaoPass);
+    }
+    if (typeof THREE.ShaderPass === 'function' && THREE.FXAAShader) {
+      fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
+      fxaaPass.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
+      composer.addPass(fxaaPass);
+    }
+    useComposer = true;
+  } catch (e) { useComposer = false; }
+}
+function renderFrame() {
+  if (useComposer && composer) composer.render();
+  else renderer.render(scene, camera);
+}
+
 function setSun(hour) {
   const t = (hour - 7) / 12;
   const az = (90 - t * 180) * Math.PI / 180;       // E → N → W (southern hemisphere)
@@ -983,7 +1090,7 @@ function animate() {
   requestAnimationFrame(animate);
   if (!heroVisible) return;
   if (autoRot) { rotY += .002; updateCam(); }
-  if (needsRender) { renderer.render(scene, camera); needsRender = false; }
+  if (needsRender) { renderFrame(); needsRender = false; }
 }
 // Debounced resize: iOS Safari fires resize continuously while the URL bar
 // collapses during scroll — resizing the GL canvas every frame janks the page.
@@ -998,6 +1105,12 @@ addEventListener('resize', () => {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h, false);
+    if (composer) {
+      composer.setSize(w, h);
+      const pr = renderer.getPixelRatio();
+      if (ssaoPass) ssaoPass.setSize(w, h);
+      if (fxaaPass) fxaaPass.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
+    }
     reshadow();
   }, 150);
 });
