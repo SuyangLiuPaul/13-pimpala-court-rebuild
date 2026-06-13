@@ -1,0 +1,108 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<canvas id="cv"></canvas>
+<script>
+// Draws the 13 Pimpala app icon at a given size. maskable=true keeps art inside
+// the 80% safe zone (iOS/Android mask the corners).
+function drawIcon(ctx, S, maskable) {
+  const r = S * (maskable ? 0.5 : 0.22);          // corner radius
+  // background — warm-dark gradient
+  const bg = ctx.createLinearGradient(0, 0, S, S);
+  bg.addColorStop(0, '#1a2030'); bg.addColorStop(1, '#0b0e14');
+  ctx.fillStyle = bg;
+  if (maskable) { ctx.fillRect(0, 0, S, S); }
+  else { rr(ctx, 0, 0, S, S, r); ctx.fill(); }
+
+  const m = maskable ? S * 0.18 : S * 0.0;        // safe-zone inset
+  const cx = S / 2, base = S * 0.74 - m * 0.2, top = S * 0.30 + m;
+  const half = S * 0.27 - m * 0.4;                 // house half-width
+  const eave = S * 0.50;                           // where walls start
+
+  // ground shadow
+  ctx.fillStyle = 'rgba(0,0,0,.28)';
+  ctx.beginPath(); ctx.ellipse(cx, base + S*0.03, half*1.15, S*0.035, 0, 0, 7); ctx.fill();
+
+  // house body (walls) — warm cream
+  ctx.fillStyle = '#ece4d3';
+  ctx.fillRect(cx - half*0.82, eave, half*1.64, base - eave);
+  // wall shading right
+  ctx.fillStyle = 'rgba(0,0,0,.10)';
+  ctx.fillRect(cx + half*0.18, eave, half*0.64, base - eave);
+
+  // roof — terracotta accent, with eave overhang
+  ctx.fillStyle = '#C4593A';
+  ctx.beginPath();
+  ctx.moveTo(cx - half, eave + S*0.015);
+  ctx.lineTo(cx, top);
+  ctx.lineTo(cx + half, eave + S*0.015);
+  ctx.closePath(); ctx.fill();
+  // roof highlight (left slope)
+  ctx.fillStyle = '#E2A07A';
+  ctx.beginPath();
+  ctx.moveTo(cx - half, eave + S*0.015);
+  ctx.lineTo(cx, top);
+  ctx.lineTo(cx, eave + S*0.015);
+  ctx.closePath(); ctx.fill();
+
+  // solar panels on the right slope (dark blue grid)
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx + half*0.08, eave - S*0.005);
+  ctx.lineTo(cx + half*0.62, top + (eave-top)*0.62);
+  ctx.lineTo(cx + half*0.86, eave - S*0.005);
+  ctx.closePath(); ctx.clip();
+  ctx.fillStyle = '#16243f';
+  ctx.fillRect(cx, top, half, eave - top + S*0.02);
+  ctx.strokeStyle = 'rgba(120,170,220,.55)'; ctx.lineWidth = Math.max(1, S*0.006);
+  for (let i = 0; i < 6; i++) { const x = cx + half*0.1 + i*half*0.13; ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, eave); ctx.stroke(); }
+  for (let j = 0; j < 4; j++) { const y = top + j*(eave-top)*0.3; ctx.beginPath(); ctx.moveTo(cx, y); ctx.lineTo(cx+half, y); ctx.stroke(); }
+  ctx.restore();
+
+  // door
+  ctx.fillStyle = '#3a4150';
+  ctx.fillRect(cx - half*0.16, base - (base-eave)*0.46, half*0.32, (base-eave)*0.46);
+  // window
+  ctx.fillStyle = '#9fc4d6';
+  ctx.fillRect(cx - half*0.62, eave + (base-eave)*0.22, half*0.28, half*0.28);
+
+  // "13" numerals on the door lintel area
+  ctx.fillStyle = '#E2A07A';
+  ctx.font = '700 ' + (S*0.13) + 'px IBM Plex Mono, monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('13', cx + half*0.46, eave + (base-eave)*0.42);
+}
+function rr(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function render(S, maskable) {
+  const c = document.getElementById('cv'); c.width = S; c.height = S;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0,0,S,S);
+  drawIcon(ctx, S, maskable);
+  return c.toDataURL('image/png');
+}
+window.ICONS = {};
+window.SAVED = [];
+async function buildAll(){
+  window.ICONS = {
+    'apple-touch-icon': render(180, false),
+    'icon-192': render(192, false),
+    'icon-512': render(512, false),
+    'icon-maskable': render(512, true),
+    'favicon': render(64, false),
+  };
+  // POST each PNG to the dev server so they land in icons/ on disk
+  for (const [name, dataUrl] of Object.entries(window.ICONS)) {
+    try {
+      const r = await fetch('/_save/' + name + '.png', { method: 'POST', body: dataUrl.slice(22) });
+      window.SAVED.push(name + ':' + (await r.text()));
+    } catch (e) { window.SAVED.push(name + ':ERR ' + e); }
+  }
+  document.title = 'saved ' + window.SAVED.length;
+}
+// wait for the mono font to load so "13" renders correctly
+document.fonts && document.fonts.ready ? document.fonts.ready.then(buildAll) : buildAll();
+setTimeout(buildAll, 600);
+</script>
+</body></html>

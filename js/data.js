@@ -58,9 +58,10 @@ const COSTS = {
     { id: 'driveway', low: 18000, high: 30000 },
     { id: 'fencing', low: 9000, high: 16000 },
     { id: 'flooring', low: 30000, high: 48000 },
+    { id: 'energy', low: 22000, high: 32000 },
     { id: 'contingency', low: 110000, high: 148000 },
   ],
-  totals: { low: 1560300, high: 1980900 },
+  totals: { low: 1582300, high: 2012900 },
   paymentStages: [5, 10, 15, 35, 25, 10],
 };
 

@@ -168,6 +168,9 @@ function makeMaterials() {
     sofa: M({ color: 0x66788a, roughness: .95 }),
     screen: M({ color: 0x0e1013, roughness: .3 }),
     white: M({ color: 0xf4f2ee, roughness: .5 }),
+    carBody2: M({ color: 0xd9dde2, roughness: .35, metalness: .55 }),
+    carGlass: M({ color: 0x1a262e, roughness: .12, metalness: .5 }),
+    tyre: M({ color: 0x14161a, roughness: .85 }),
   };
   // surface relief — reuse colour maps as bump maps (cheap, effective)
   MAT.brick.bumpMap = TEX.brick; MAT.brick.bumpScale = .015;
@@ -443,6 +446,38 @@ function buildLot() {
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(.04, .04, 1.6, 8), MAT.steel); pole.position.y = .8; cl.add(pole);
   B(cl, 2.1, .03, 1.3, 0, 1.55, 0, MAT.steel, false);
   const cp = hw(10.8, 17.5); cl.position.set(cp[0], 0, cp[1]); lotG.add(cl);
+
+  // ---- electric car parked on the driveway + EV charge pedestal ----
+  evCar(lotG, 16.3, 0.4, MAT.carBlue || MAT.steel);
+  // wall charger box near the garage door
+  const wc = new THREE.Group();
+  B(wc, .26, .42, .14, 0, 1.2, 0, MAT.white);
+  const wcLed = new THREE.Mesh(new THREE.BoxGeometry(.05, .05, .02), new THREE.MeshStandardMaterial({ color: 0x6fc0e0, emissive: 0x2a7090, emissiveIntensity: .9 }));
+  wcLed.position.set(0, 1.32, -.08); wc.add(wcLed);
+  const wcp = hw(12.9, 1.7); wc.position.set(wcp[0], 0, wcp[1]); wc.rotation.y = ROT; lotG.add(wc);
+  // charge cable (thin curved tube from charger to the car port)
+  const cab = new THREE.Mesh(new THREE.TorusGeometry(.5, .025, 6, 12, Math.PI), new THREE.MeshStandardMaterial({ color: 0x111316, roughness: .7 }));
+  const cabp = hw(14.2, 1.0); cab.position.set(cabp[0], .55, cabp[1]); cab.rotation.set(Math.PI / 2, ROT, 0); lotG.add(cab);
+}
+
+// a sleeker electric car (rounded body, light colour, charge port)
+function evCar(g, u, v, mat) {
+  const o = new THREE.Group();
+  B(o, 1.85, .42, 4.3, 0, .46, 0, MAT.carBody2 || MAT.steel);     // lower body
+  B(o, 1.7, .5, 2.6, 0, .82, -.05, MAT.carBody2 || MAT.steel);    // cabin
+  B(o, 1.56, .42, 2.2, 0, .86, -.05, MAT.carGlass || MAT.screen); // glasshouse
+  B(o, 1.7, .04, 4.0, 0, .04, 0, MAT.fascia, false);             // shadow skirt
+  const wy = .33, wr = .33;
+  [[-.83, 1.45], [.83, 1.45], [-.83, -1.45], [.83, -1.45]].forEach(([wx, wz]) => {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(wr, wr, .22, 16), MAT.tyre || MAT.screen);
+    t.rotation.z = Math.PI / 2; t.position.set(wx, wy, wz); t.castShadow = true; o.add(t);
+  });
+  // charge port glow on the rear quarter
+  const port = new THREE.Mesh(new THREE.BoxGeometry(.04, .12, .12), new THREE.MeshStandardMaterial({ color: 0x6fc0e0, emissive: 0x2a7090, emissiveIntensity: .7 }));
+  port.position.set(.93, .55, 1.7); o.add(port);
+  const p = hw(u, v); o.position.set(p[0], 0, p[1]); o.rotation.y = ROT;
+  o.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+  g.add(o);
 }
 
 // ============================================================
@@ -529,23 +564,58 @@ function buildExterior() {
   // east ground strip skillion (covers u 0–0.8 inset)
   flatPoly(roofG, [hw(-0.35, -.3), hw(1.0, -.3), hw(1.0, 17.0), hw(-0.35, 17.0)], GH + .18, .1, MAT.fascia, .2);
 
-  // solar array: single panel patch laid parallel to the west slope,
-  // centred within the ridge span (v 5.8–10.2) so it stays on the plane
-  const pitch = 22.5 * Math.PI / 180;
-  const su = 9.35, sv = 8.0;                       // patch centre (house coords)
-  const ridgeY = main.yR;                          // 8.30
-  const sy = ridgeY - (su - 6.6) * Math.tan(pitch) + .10;
-  const sg = new THREE.Group();
-  const patch = new THREE.Mesh(new THREE.BoxGeometry(3.1, .07, 3.4), MAT.solar);
-  patch.castShadow = false; sg.add(patch);
-  // panel grid lines
-  for (let i = 1; i < 3; i++) B(sg, .03, .085, 3.4, -1.55 + i * 1.033, 0, 0, MAT.steel, false);
-  B(sg, 3.1, .085, .03, 0, 0, 0, MAT.steel, false);
-  const sp = hw(su, sv);
-  sg.position.set(sp[0], sy, sp[1]);
-  sg.rotation.y = ROT;
-  sg.rotation.z = pitch;                           // tilt down toward the west eave
-  roofG.add(sg);
+  // ---- 13.2 kW solar array (32 panels) across the west-facing slopes ----
+  const pitch = 22.5 * Math.PI / 180, ridgeY = main.yR;
+  // ridgeU = u of the ridge; panels sit on the west slope (u > ridgeU)
+  function solarArray(ridgeU, centreU, centreV, rows, cols) {
+    const g = new THREE.Group();
+    const pw = 1.02, pl = 1.68, gap = .04;          // portrait panels
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = (r - (rows - 1) / 2) * (pw + gap);   // local-x = up/down slope
+      const z = (c - (cols - 1) / 2) * (pl + gap);   // local-z = along ridge
+      const pn = new THREE.Mesh(new THREE.BoxGeometry(pw, .05, pl), MAT.solar);
+      pn.position.set(x, 0, z); pn.castShadow = false; g.add(pn);
+      // cell grid lines
+      B(pn, pw, .055, .015, 0, 0, -pl / 4, MAT.steel, false);
+      B(pn, pw, .055, .015, 0, 0, pl / 4, MAT.steel, false);
+      B(pn, .015, .055, pl, 0, 0, 0, MAT.steel, false);
+    }
+    // mounting rails just under the array
+    B(g, rows * (pw + gap), .04, .05, 0, -.05, -cols * (pl + gap) / 2 + .3, MAT.steel, false);
+    B(g, rows * (pw + gap), .04, .05, 0, -.05, cols * (pl + gap) / 2 - .3, MAT.steel, false);
+    const y = ridgeY - (centreU - ridgeU) * Math.tan(pitch) + .09;
+    const p = hw(centreU, centreV);
+    g.position.set(p[0], y, p[1]);
+    g.rotation.y = ROT; g.rotation.z = pitch;
+    roofG.add(g);
+  }
+  solarArray(6.6, 9.5, 8.4, 3, 7);     // main roof — 21 panels
+  solarArray(15.7, 17.4, 9.0, 2, 5);   // garage roof — 10 panels
+  // small skylight on the east slope for the void
+  const sky = new THREE.Mesh(new THREE.BoxGeometry(1.4, .08, 1.4), MAT.glass);
+  const skyP = hw(4.0, 4.0); sky.position.set(skyP[0], ridgeY - (6.6 - 4.0) * Math.tan(pitch) + .1, skyP[1]);
+  sky.rotation.y = ROT; sky.rotation.z = -pitch; roofG.add(sky);
+
+  buildEnergy();
+}
+
+// all-electric plant: battery + heat-pump hot water on the service wall (Pimpala side)
+function buildEnergy() {
+  // Tesla-Powerwall-style battery on the west (Pimpala) wall of the service wing
+  const bat = new THREE.Group();
+  B(bat, .76, 1.15, .16, 0, .85, 0, MAT.renderDark);
+  B(bat, .6, .9, .03, 0, .85, -.09, MAT.steel, false);     // face panel
+  const led = new THREE.Mesh(new THREE.BoxGeometry(.12, .04, .02), new THREE.MeshStandardMaterial({ color: 0x6fd0a0, emissive: 0x2f8060, emissiveIntensity: .8 }));
+  led.position.set(.22, 1.28, -.09); bat.add(led);
+  const bp = hw(19.12, 13.2); bat.position.set(bp[0], 0, bp[1]); bat.rotation.y = ROT + Math.PI / 2; extG.add(bat);
+  // heat-pump hot-water unit (compressor box + slim tank) beside it
+  const hp = new THREE.Group();
+  B(hp, .6, .5, .34, 0, .55, 0, MAT.steel);                // compressor
+  const fan = new THREE.Mesh(new THREE.CylinderGeometry(.16, .16, .04, 16), MAT.fascia);
+  fan.rotation.z = Math.PI / 2; fan.position.set(0, .55, -.18); hp.add(fan);
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(.28, .28, 1.6, 16), MAT.white);
+  tank.position.set(.55, .8, 0); hp.add(tank);
+  const hpP = hw(19.12, 14.6); hp.position.set(hpP[0], 0, hpP[1]); hp.rotation.y = ROT + Math.PI / 2; extG.add(hp);
 }
 
 // ---------- interiors (dollhouse) ----------
@@ -625,27 +695,50 @@ function stair(g, u0, v0, y0, rise) {
   }
 }
 
+// clean dollhouse helpers: colour-coded floor rooms + a low perimeter curb,
+// NO chunky internal partitions (those read as a crude maze).
+function room(g, u0, v0, u1, v1, mat, y) {
+  flatPoly(g, [hw(u0, v0), hw(u1, v0), hw(u1, v1), hw(u0, v1)], (y || 0) + .012, .03, mat, .35);
+  // thin dark inlay border so each room reads as a distinct plate
+  const T = .05, h = .035;
+  for (const [a, b, c, d] of [[u0, v0, u1, v0], [u1, v0, u1, v1], [u1, v1, u0, v1], [u0, v1, u0, v0]]) {
+    const A = hw(a, b), B = hw(c, d), len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(len, h, T), MAT.fascia);
+    m.position.set((A[0] + B[0]) / 2, (y || 0) + .05, (A[1] + B[1]) / 2);
+    m.rotation.y = -Math.atan2(B[1] - A[1], B[0] - A[0]); g.add(m);
+  }
+}
+function curb(g, u0, v0, u1, v1, y) {
+  const h = .42, T = .12;
+  for (const [a, b, c, d] of [[u0, v0, u1, v0], [u1, v0, u1, v1], [u1, v1, u0, v1], [u0, v1, u0, v0]]) {
+    const A = hw(a, b), B = hw(c, d), len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(len, h, T), MAT.intWall);
+    m.position.set((A[0] + B[0]) / 2, (y || 0) + h / 2, (A[1] + B[1]) / 2);
+    m.rotation.y = -Math.atan2(B[1] - A[1], B[0] - A[0]); m.castShadow = true; m.receiveShadow = true; g.add(m);
+  }
+}
+
 function buildInteriorGround() {
   intGround = new THREE.Group();
+  // base slabs
   zone(intGround, 0, 0, 12.4, 16.7, MAT.floorG, 0);
   zone(intGround, 12.4, 2.5, 19, 16.5, MAT.floorTile, 0);
-  zone(intGround, .2, 0, 4.2, 5.9, MAT.carpet, .01);
-  zone(intGround, 7.6, 3.6, 12.2, 7.6, MAT.carpet, .01);
-  zone(intGround, .2, 9.8, 2.0, 11.6, MAT.bath, .01);
-  // partitions
-  iwU(intGround, 4.2, 0, 5.9, 0, 1.0);
-  iwV(intGround, 5.9, .2, 4.2, 0, .9);
-  iwU(intGround, 7.4, 0, 7.6, 0, 1.0);
-  iwV(intGround, 3.6, 7.4, 12.2, 0, 1.0);
-  iwV(intGround, 7.6, 7.4, 12.4, 0, 1.6);
-  iwU(intGround, 4.2, 5.9, 11.6, 0, 1.2);
-  iwV(intGround, 9.8, .2, 4.2, 0, .9);
-  iwV(intGround, 11.6, .2, 7.4, 0, 1.4);
-  iwU(intGround, 2.0, 9.8, 11.6, 0, .8);
-  iwV(intGround, 8.6, 12.6, 18.8, 0, 1.0);
-  iwU(intGround, 14.2, 8.6, 12.9, 0, .8);
-  iwU(intGround, 16.8, 8.6, 12.9, 0, .8);
-  iwV(intGround, 10.8, 16.8, 19, 0, .7);
+  // colour-coded rooms (carpet=bed/living warm, bath=blue-grey, tile=wet, conc=garage)
+  room(intGround, .2, .2, 4.2, 4.0, MAT.carpet);       // guest bed 5
+  room(intGround, .2, 4.0, 2.4, 5.9, MAT.bath);        // ens 5
+  room(intGround, 2.4, 4.0, 4.2, 5.9, MAT.carpet);     // robe
+  room(intGround, 7.4, .2, 12.2, 3.6, MAT.floorG);     // study
+  room(intGround, 7.6, 3.6, 12.2, 7.6, MAT.carpet);    // theatre
+  room(intGround, .2, 5.9, 4.2, 9.8, MAT.carpet);      // rumpus
+  room(intGround, .2, 9.8, 2.0, 11.6, MAT.bath);       // powder
+  room(intGround, 7.4, 7.6, 12.4, 11.6, MAT.floorTile);// hub/meals
+  room(intGround, .2, 11.6, 12.2, 16.5, MAT.floorG);   // family/dining/kitchen
+  room(intGround, 12.6, 2.5, 18.8, 8.6, MAT.conc);     // garage
+  room(intGround, 12.4, 8.6, 19, 12.9, MAT.floorTile); // mud/wet kitchen/laundry
+  room(intGround, 12.4, 12.9, 19, 16.5, MAT.paver);    // alfresco
+  // perimeter curb only (footprint outline)
+  curb(intGround, 0, 0, 12.4, 16.7, 0);
+  curb(intGround, 12.4, 2.5, 19, 16.5, 0);
   stair(intGround, 4.35, 6.6, 0, UY);
   // furniture
   furnish(intGround, 'bed', 2.2, 2.2, 180, 0);
@@ -668,25 +761,22 @@ function buildInteriorUpper() {
   intUpper = new THREE.Group();
   zone(intUpper, .8, 0, 12.4, 16.7, MAT.carpet, UY - .04);
   zone(intUpper, 12.4, 2.5, 19, 15.9, MAT.carpet, UY - .04);
-  zone(intUpper, 8.4, 13.2, 11.0, 16.5, MAT.bath, UY - .02);
-  zone(intUpper, 8.6, 4.2, 12.2, 7.0, MAT.bath, UY - .02);
-  zone(intUpper, 12.4, 6.4, 14.8, 9.1, MAT.bath, UY - .02);
-  iwV(intUpper, 4.4, .8, 5.0, UY, .9);
-  iwU(intUpper, 5.0, .2, 4.4, UY, 0);
-  iwU(intUpper, 8.6, .2, 7.0, UY, 1.0);
-  iwV(intUpper, 4.2, 8.6, 12.2, UY, .9);
-  iwV(intUpper, 7.0, 8.6, 12.2, UY, .9);
-  iwU(intUpper, 5.4, 8.4, 16.5, UY, 1.0);
-  iwV(intUpper, 8.4, .8, 5.4, UY, 1.1);
-  iwV(intUpper, 12.4, .8, 5.8, UY, 1.1);
-  iwV(intUpper, 13.2, 5.8, 12.4, UY, 1.3);
-  iwU(intUpper, 8.4, 13.2, 16.5, UY, .8);
-  iwU(intUpper, 11.0, 13.2, 16.5, UY, 0);
-  iwV(intUpper, 6.4, 12.4, 19.0, UY, 1.0);
-  iwU(intUpper, 14.8, 6.4, 9.1, UY, .8);
-  iwV(intUpper, 9.1, 12.4, 19.0, UY, 1.2);   // media front
-  iwV(intUpper, 12.7, 12.4, 19.0, UY, .9);   // media | bed 6
-  stair(intUpper, 4.35, 6.6, 0, UY); // visible from above through void
+  // rooms
+  room(intUpper, .8, 8.4, 5.2, 16.5, MAT.carpet, UY - .02);  // master suite
+  room(intUpper, 8.4, 13.2, 11.0, 16.5, MAT.bath, UY - .02); // ensuite
+  room(intUpper, .8, .2, 5.0, 4.4, MAT.carpet, UY - .02);    // bed 3
+  room(intUpper, 8.6, .2, 12.2, 4.2, MAT.carpet, UY - .02);  // bed 4
+  room(intUpper, 8.6, 4.2, 12.2, 7.0, MAT.bath, UY - .02);   // main bath
+  room(intUpper, .8, 7.0, 5.2, 11.8, MAT.carpet, UY - .02);  // retreat
+  room(intUpper, 8.6, 7.0, 12.2, 11.8, MAT.carpet, UY - .02);// gym
+  room(intUpper, 13.0, 2.5, 18.4, 6.4, MAT.carpet, UY - .02);// bed 2
+  room(intUpper, 12.4, 6.4, 14.8, 9.1, MAT.bath, UY - .02);  // ens 2
+  room(intUpper, 12.4, 9.1, 19, 12.7, MAT.floorG, UY - .02); // media lounge
+  room(intUpper, 13.0, 12.7, 19, 15.9, MAT.carpet, UY - .02);// bed 6
+  curb(intUpper, .8, 0, 12.4, 16.7, UY);
+  curb(intUpper, 12.4, 2.5, 19, 15.9, UY);
+  // void opening (over the stair/foyer) — leave open, just an edge rail
+  stair(intUpper, 4.35, 6.6, 0, UY);
   furnish(intUpper, 'bed', 3.0, 14.6, 0, UY, { master: true });
   furnish(intUpper, 'wr', 7.1, 15.9, 0, UY, { len: 2.4 });
   furnish(intUpper, 'vanity', 9.7, 15.9, 0, UY); furnish(intUpper, 'bath', 9.7, 14.1, 0, UY); furnish(intUpper, 'shower', 10.4, 15.0, 90, UY);

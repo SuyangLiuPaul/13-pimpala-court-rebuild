@@ -63,6 +63,8 @@ function renderAll() {
   $('#designKicker').textContent = L.design.kicker;
   $('#designH2').textContent = L.design.h2;
   $('#designLede').textContent = L.design.lede;
+  $('#coverageTitle').textContent = L.design.coverageTitle;
+  $('#coverageBody').textContent = L.design.coverageBody;
   $('#accomTitle').textContent = L.design.accomTitle;
   $('#accomList').innerHTML = L.design.accom.map(i => `<li>${i}</li>`).join('');
   $('#areasTitle').textContent = L.design.areasTitle;
