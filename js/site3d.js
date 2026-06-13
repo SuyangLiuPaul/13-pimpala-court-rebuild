@@ -234,9 +234,14 @@ function makeMaterials() {
     screen: M({ color: 0x0e1013, roughness: .3 }),
     white: M({ color: 0xf4f2ee, roughness: .5 }),
     carBody2: M({ color: 0xd9dde2, roughness: .35, metalness: .55 }),
-    carGlass: M({ color: 0x1a262e, roughness: .12, metalness: .5 }),
-    tyre: M({ color: 0x14161a, roughness: .85 }),
+    carGlass: M({ color: 0x141d24, roughness: .08, metalness: .6 }),
+    tyre: M({ color: 0x14161a, roughness: .9 }),
   };
+  // automotive 2-coat paint: metallic base + glossy clearcoat that mirrors the sky
+  MAT.carPaint = new THREE.MeshPhysicalMaterial({
+    color: 0xbcc6d0, metalness: .65, roughness: .42,
+    clearcoat: 1.0, clearcoatRoughness: .06,
+  });
   // proper tangent-space normal maps (real surface relief, not a flat box)
   const NV = (s) => new THREE.Vector2(s, s);
   const nm = (mat, tex, str, scale) => { mat.normalMap = normalTex(tex, str); mat.normalScale = NV(scale); };
@@ -584,14 +589,16 @@ function shrub(g, u, v, s) {
 // a sleeker electric car (rounded body, light colour, charge port)
 function evCar(g, u, v, mat) {
   const o = new THREE.Group();
-  B(o, 1.85, .42, 4.3, 0, .46, 0, MAT.carBody2 || MAT.steel);     // lower body
-  B(o, 1.7, .5, 2.6, 0, .82, -.05, MAT.carBody2 || MAT.steel);    // cabin
+  B(o, 1.85, .42, 4.3, 0, .46, 0, MAT.carPaint);                  // lower body (clearcoat)
+  B(o, 1.7, .5, 2.6, 0, .82, -.05, MAT.carPaint);                 // cabin
   B(o, 1.56, .42, 2.2, 0, .86, -.05, MAT.carGlass || MAT.screen); // glasshouse
   B(o, 1.7, .04, 4.0, 0, .04, 0, MAT.fascia, false);             // shadow skirt
   const wy = .33, wr = .33;
   [[-.83, 1.45], [.83, 1.45], [-.83, -1.45], [.83, -1.45]].forEach(([wx, wz]) => {
     const t = new THREE.Mesh(new THREE.CylinderGeometry(wr, wr, .22, 16), MAT.tyre || MAT.screen);
     t.rotation.z = Math.PI / 2; t.position.set(wx, wy, wz); t.castShadow = true; o.add(t);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(.14, .14, .24, 12), MAT.steel);
+    hub.rotation.z = Math.PI / 2; hub.position.set(wx, wy, wz); o.add(hub);   // alloy hub
   });
   // charge port glow on the rear quarter
   const port = new THREE.Mesh(new THREE.BoxGeometry(.04, .12, .12), new THREE.MeshStandardMaterial({ color: 0x6fc0e0, emissive: 0x2a7090, emissiveIntensity: .7 }));
