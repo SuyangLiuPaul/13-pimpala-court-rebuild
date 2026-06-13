@@ -560,6 +560,17 @@ function buildLot() {
 
   // driveway: Pimpala crossover sweeping to the south-facing garage door
   flatPoly(lotG, [[22.6, 3.4], [22.6, 7.4], [18.6, 7.0], [15.4, 5.2], [14.2, 2.5], [13.6, -1.6], [18.2, -1.6], [18.6, 2.5]].map(p => hw(...p)), 0, .055, MAT.agg, .4);
+  // saw-cut control joints + crossover expansion joint (break up the slab)
+  const joint = (ua, va, ub, vb) => {
+    const A = hw(ua, va), B = hw(ub, vb), len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(len, .02, .03), MAT.fascia);
+    m.position.set((A[0] + B[0]) / 2, .062, (A[1] + B[1]) / 2);
+    m.rotation.y = -Math.atan2(B[1] - A[1], B[0] - A[0]); lotG.add(m);
+  };
+  joint(13.7, -0.5, 18.1, -0.5); joint(13.7, 0.9, 18.1, 0.9);   // garage-approach transverse
+  joint(15.9, -1.5, 15.9, 2.3);                                  // approach centre joint
+  joint(15.6, 4.7, 21.2, 5.5);                                   // sweep joint
+  joint(20.9, 3.6, 20.9, 7.1);                                   // expansion joint at the crossover
   // crossover apron over the verge
   flatPoly(lotG, [[22.6, 3.0], [22.6, 7.8], [25.6, 8.2], [25.6, 2.6]].map(p => hw(...p)), -.01, .05, MAT.conc, .4);
   // path to porch from driveway
