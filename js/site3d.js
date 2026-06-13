@@ -761,11 +761,18 @@ function buildExterior() {
     post.position.set(p[0], (GH + .1) / 2, p[1]); post.castShadow = true; extG.add(post);
   });
 
-  // detail: downpipes at corners
-  [[0.15, .3], [0.15, 16.4], [12.25, .3], [18.85, 2.8], [18.85, 15.6]].forEach(([u, v]) => {
-    const p = hw(u, v);
-    const dp = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, GH, 8), MAT.fascia);
-    dp.position.set(p[0], GH / 2, p[1]); extG.add(dp);
+  // full-height downpipes from the gutter to a shoe + stormwater pit at the base
+  // [u, v, topY] — topY is the eave the pipe rises to (two-storey 5.69, single 3.0)
+  [[0.15, .3, 5.5], [0.15, 16.4, 5.5], [12.25, .3, 5.5], [18.85, 2.8, 5.5], [18.85, 15.6, 3.0]].forEach(([u, v, topY]) => {
+    const p = hw(u, v), col = MAT.gutter;
+    const dp = new THREE.Mesh(new THREE.CylinderGeometry(.045, .045, topY - .15, 8), col);
+    dp.position.set(p[0], (topY - .15) / 2 + .15, p[1]); dp.castShadow = true; extG.add(dp);
+    // shoe (angled outlet) kicking out from the base
+    const shoe = new THREE.Mesh(new THREE.CylinderGeometry(.045, .05, .3, 8), col);
+    shoe.position.set(p[0], .15, p[1]); shoe.rotation.x = .5; shoe.translateY(-.05); extG.add(shoe);
+    // small stormwater grate where it discharges
+    const grate = new THREE.Mesh(new THREE.BoxGeometry(.22, .03, .22), MAT.fascia);
+    grate.position.set(p[0], .02, p[1] + .12); extG.add(grate);
   });
   // AC condenser + meter box on the east wall
   const ac = new THREE.Group();
