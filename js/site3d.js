@@ -1546,12 +1546,20 @@ const GradeShader = {
     saturation: { value: 1.09 },
     warmth: { value: 0.045 },
     vignette: { value: 0.80 },
+    aberration: { value: 0.0042 },     // subtle radial RGB split — real lens, not a glitch
+    grain: { value: 0.040 },           // fine sensor/film grain
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
   fragmentShader: [
-    'uniform sampler2D tDiffuse; uniform float contrast, saturation, warmth, vignette; varying vec2 vUv;',
+    'uniform sampler2D tDiffuse; uniform float contrast, saturation, warmth, vignette, aberration, grain; varying vec2 vUv;',
+    'float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }',
     'void main(){',
-    '  vec3 c = texture2D(tDiffuse, vUv).rgb;',
+    '  vec2 dc = vUv - 0.5;',
+    '  vec2 ab = dc * dot(dc, dc) * aberration;',                        // grows toward the frame edge
+    '  vec3 c;',                                                          // chromatic aberration: split R/B
+    '  c.r = texture2D(tDiffuse, vUv + ab).r;',
+    '  c.g = texture2D(tDiffuse, vUv).g;',
+    '  c.b = texture2D(tDiffuse, vUv - ab).b;',
     '  c = (c - 0.5) * contrast + 0.5;',                                  // contrast around mid-grey
     '  float l = dot(c, vec3(0.299,0.587,0.114));',
     '  c = mix(vec3(l), c, saturation);',                                 // saturation
@@ -1559,6 +1567,8 @@ const GradeShader = {
     '  c += warmth * vec3(-0.35,0.05,0.5) * l * 0.6;',                    // cool highlights
     '  float d = length(vUv - 0.5) * 1.35;',                             // vignette
     '  c *= mix(1.0, 0.80, smoothstep(0.55, vignette + 0.45, d));',
+    '  float g = (hash(vUv * 2048.0) - 0.5) * grain;',                   // screen-space grain
+    '  c += g * (0.7 + 0.6 * (1.0 - l));',                               // a touch heavier in shadows
     '  gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);',
     '}',
   ].join('\n'),
