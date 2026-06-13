@@ -136,14 +136,42 @@ function makeTextures() {
       }
     }
   }, 3.0, 1.5);
-  // Surfmist off-white acrylic render for the upper storey (Hebel-style)
-  TEX.render = canvasTex(128, 128, (g, w, h) => {
+  // Surfmist off-white acrylic render for the upper storey (Hebel-style) — with
+  // subtle weathering: soft grime blotches + faint vertical rain-wash streaks so
+  // the wall reads as a real rendered surface, not flat plastic.
+  TEX.render = canvasTex(256, 256, (g, w, h) => {
     g.fillStyle = '#e9e7e0'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 1800; i++) {
-      g.fillStyle = `rgba(${214 + Math.random() * 34},${212 + Math.random() * 32},${206 + Math.random() * 30},.45)`;
+    for (let i = 0; i < 3200; i++) {
+      g.fillStyle = `rgba(${214 + Math.random() * 34},${212 + Math.random() * 32},${206 + Math.random() * 30},.4)`;
       g.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4);
     }
-  }, 4, 4);
+    // soft large-scale grime tinting (cool grey, very low opacity)
+    for (let i = 0; i < 10; i++) {
+      const cx = Math.random() * w, cy = Math.random() * h, r = 40 + Math.random() * 80;
+      const bl = g.createRadialGradient(cx, cy, 4, cx, cy, r);
+      bl.addColorStop(0, 'rgba(176,178,176,.10)'); bl.addColorStop(1, 'rgba(176,178,176,0)');
+      g.fillStyle = bl; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill();
+    }
+    // faint vertical rain-wash streaks
+    for (let i = 0; i < 22; i++) {
+      const x = Math.random() * w, top = Math.random() * h * .5, len = 30 + Math.random() * 110;
+      const st = g.createLinearGradient(0, top, 0, top + len);
+      st.addColorStop(0, 'rgba(150,150,146,0)'); st.addColorStop(.5, 'rgba(150,150,146,.07)'); st.addColorStop(1, 'rgba(150,150,146,0)');
+      g.fillStyle = st; g.fillRect(x, top, 1 + Math.random() * 1.5, len);
+    }
+  }, 3, 3);
+  // neutral grunge / roughness-variation map shared by the matte facade materials
+  // → uneven sheen (damp vs dry patches) instead of one mathematically-flat gloss
+  TEX.grunge = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#d6d6d6'; g.fillRect(0, 0, w, h);                 // ~0.84 base roughness
+    for (let i = 0; i < 34; i++) {
+      const cx = Math.random() * w, cy = Math.random() * h, r = 24 + Math.random() * 78, v = 120 + Math.random() * 70;
+      const bl = g.createRadialGradient(cx, cy, 3, cx, cy, r);
+      bl.addColorStop(0, `rgba(${v},${v},${v},.45)`); bl.addColorStop(1, `rgba(${v},${v},${v},0)`);
+      g.fillStyle = bl; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill();
+    }
+    for (let i = 0; i < 2600; i++) { const v = 130 + Math.random() * 80; g.fillStyle = `rgba(${v},${v},${v},.22)`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
+  }, 2, 2);
   // Colorbond Monument steel roof — fine standing-seam pans running down-slope,
   // near-black matt charcoal (the standard new-build look, not concrete tile)
   TEX.roof = canvasTex(512, 512, (g, w, h) => {
@@ -365,6 +393,9 @@ function makeMaterials() {
   nm(MAT.grass, TEX.grass, 6, .5);
   nm(MAT.lawn, TEX.lawn, 6, .5);
   nm(MAT.conc, TEX.conc, 4, .25);
+  // roughness-variation map on the matte facade + ground materials → uneven
+  // sheen (damp/dry patches) so speculars aren't mathematically uniform
+  [MAT.render, MAT.brick, MAT.roof, MAT.conc, MAT.acwall, MAT.renderDark].forEach(m => { m.roughnessMap = TEX.grunge; });
   // keep IBL subtle on matte surfaces so sun/shadow contrast survives;
   // strong only on glass and metals (default envMapIntensity is 1.0 — set explicitly)
   for (const k in MAT) {
