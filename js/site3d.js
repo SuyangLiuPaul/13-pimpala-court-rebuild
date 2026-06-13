@@ -395,7 +395,7 @@ function makeMaterials() {
   nm(MAT.conc, TEX.conc, 4, .25);
   // roughness-variation map on the matte facade + ground materials → uneven
   // sheen (damp/dry patches) so speculars aren't mathematically uniform
-  [MAT.render, MAT.brick, MAT.roof, MAT.conc, MAT.acwall, MAT.renderDark].forEach(m => { m.roughnessMap = TEX.grunge; });
+  // (roughnessMap removed — it made the matte brick/roof read glossy in patches)
   // keep IBL subtle on matte surfaces so sun/shadow contrast survives;
   // strong only on glass and metals (default envMapIntensity is 1.0 — set explicitly)
   for (const k in MAT) {
@@ -453,10 +453,13 @@ function glazing(g, x0, x1, y0, y1, T, sillOut) {
   box(lin, h - lin * 2, T * .94, x1 - lin / 2, cy, 0, MAT.render, false); // right jamb
   // centred (recessed) glass
   box(w - lin * 2 - .02, h - lin * 2 - .02, T * .16, cx, cy, 0, MAT.glass, false);
-  // emissive "room light" panel just behind the glass — dark by day, glows at
-  // night (ramped in setTime). ~2/3 of windows are lit, a few with a cool TV cast.
+  // OPAQUE backing panel behind EVERY window so you never see through the
+  // hollow shell (fixes "see-through walls"). ~2/3 read as a lit room (emissive,
+  // ramped at night in setTime); the rest are a dark interior. All block sight.
   winN++;
-  if (winN % 3 !== 0) box(w - lin * 2 - .05, h - lin * 2 - .05, .02, cx, cy, -.035, winN % 5 === 0 ? MAT.winLitCool : MAT.winLit, false);
+  const litRoom = winN % 3 !== 0;
+  const bm = litRoom ? (winN % 5 === 0 ? MAT.winLitCool : MAT.winLit) : MAT.screen;
+  box(w - lin * 2 - .04, h - lin * 2 - .04, T * .5, cx, cy, -T * 0.22, bm, false);
   // slim dark frame on the glass plane
   const f = .05;
   box(w - lin * 2, f, T * .34, cx, y1 - lin - f / 2, 0, MAT.frame, false);
@@ -1399,7 +1402,7 @@ function initScene() {
   const heroEl = document.getElementById('hero');
   // tighter near/far so SSAO + shadow depth precision is usable at house scale
   camera = new THREE.PerspectiveCamera(38, heroEl.clientWidth / heroEl.clientHeight, .4, 280);
-  renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c3d'), antialias: true });
+  renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c3d'), antialias: true, preserveDrawingBuffer: true });
   renderer.setSize(heroEl.clientWidth, heroEl.clientHeight, false); // CSS keeps the canvas at 100%
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
   renderer.shadowMap.enabled = true;
@@ -1583,8 +1586,8 @@ const GradeShader = {
     saturation: { value: 1.09 },
     warmth: { value: 0.045 },
     vignette: { value: 0.80 },
-    aberration: { value: 0.0042 },     // subtle radial RGB split — real lens, not a glitch
-    grain: { value: 0.040 },           // fine sensor/film grain
+    aberration: { value: 0.0026 },     // subtle radial RGB split — real lens, not a glitch
+    grain: { value: 0.022 },           // fine sensor/film grain
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
   fragmentShader: [
