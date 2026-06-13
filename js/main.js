@@ -18,9 +18,11 @@ function renderAll() {
 
   // nav
   $('#navLinks').innerHTML = Object.entries(L.nav).map(([k, v]) => `<a href="#${k}" data-sec="${k}">${v}</a>`).join('');
-  $('#langSwitch').innerHTML = ['en', 'zh', 'tw'].map(l =>
+  // language toggle — rendered into both the nav and the always-visible top-right float
+  const langBtns = ['en', 'zh', 'tw'].map(l =>
     `<button class="lang ${l === LANG ? 'active' : ''}" data-lang="${l}">${I18N[l].langName}</button>`).join('');
-  document.querySelectorAll('#langSwitch .lang').forEach(b => b.addEventListener('click', () => {
+  ['#langSwitch', '#langFloat'].forEach(sel => { const el = $(sel); if (el) el.innerHTML = langBtns; });
+  document.querySelectorAll('#langSwitch .lang, #langFloat .lang').forEach(b => b.addEventListener('click', () => {
     LANG = b.dataset.lang; localStorage.setItem('pimpala-lang', LANG); renderAll();
   }));
 

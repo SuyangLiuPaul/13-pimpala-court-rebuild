@@ -225,10 +225,10 @@ function makeMaterials() {
     leaf3: M({ color: 0x37592a, roughness: 1 }),     // shadowed canopy underside
     solar: M({ color: 0x10141f, roughness: .25, metalness: .55 }),
     steel: M({ color: 0xc4c8cc, roughness: .3, metalness: .6 }),
-    floorG: M({ color: 0xb6a583, roughness: .85 }),      // deeper engineered-oak (was washing out)
-    floorTile: M({ color: 0xc1baa9, roughness: .6 }),    // warm grey tile
-    carpet: M({ color: 0xa3957d, roughness: 1 }),        // deeper wool beige
-    bath: M({ color: 0xa3bfc3, roughness: .7 }),         // deeper blue-grey
+    floorG: M({ color: 0xc7a877, roughness: .7 }),       // warm honey engineered-oak (living)
+    floorTile: M({ color: 0xd2cdc2, roughness: .45 }),   // clean light stone tile (hub/wet)
+    carpet: M({ color: 0xbbb1a0, roughness: 1 }),        // soft greige wool (bedrooms)
+    bath: M({ color: 0x9cc0c6, roughness: .55 }),        // fresh blue-grey bathroom tile
     intWall: M({ color: 0xddd4c3, roughness: .96 }),     // warm off-white (was stark)
     cab: M({ color: 0xece7dc, roughness: .55 }),
     stone: M({ color: 0x2c2d33, roughness: .3, metalness: .2 }),
@@ -840,23 +840,26 @@ function buildExterior() {
   buildEntry();
 }
 
-// all-electric plant: battery + heat-pump hot water on the service wall (Pimpala side)
+// all-electric plant: Powerwall-style battery mounted in clear view on the
+// south-facing garage front (beside the door, sunlit), heat-pump HWS on the
+// west service wall near the front.
 function buildEnergy() {
-  // Tesla-Powerwall-style battery on the west (Pimpala) wall of the service wing
+  // real home batteries (Powerwall etc.) are WHITE — so it reads clearly on the brick
   const bat = new THREE.Group();
-  B(bat, .76, 1.15, .16, 0, .85, 0, MAT.renderDark);
-  B(bat, .6, .9, .03, 0, .85, -.09, MAT.steel, false);     // face panel
-  const led = new THREE.Mesh(new THREE.BoxGeometry(.12, .04, .02), new THREE.MeshStandardMaterial({ color: 0x6fd0a0, emissive: 0x2f8060, emissiveIntensity: .8 }));
-  led.position.set(.22, 1.28, -.09); bat.add(led);
-  const bp = hw(19.12, 13.2); bat.position.set(bp[0], 0, bp[1]); bat.rotation.y = ROT + Math.PI / 2; extG.add(bat);
-  // heat-pump hot-water unit (compressor box + slim tank) beside it
+  const batBody = new THREE.MeshPhysicalMaterial({ color: 0xf2f2ee, roughness: .35, clearcoat: .6, clearcoatRoughness: .3 });
+  B(bat, .62, 1.12, .16, 0, .86, 0, batBody);
+  B(bat, .46, .9, .02, 0, .86, .1, new THREE.MeshStandardMaterial({ color: 0xe6e6e2, roughness: .25 }), false);  // recessed face
+  const led = new THREE.Mesh(new THREE.BoxGeometry(.14, .045, .02), new THREE.MeshStandardMaterial({ color: 0x7fe0b0, emissive: 0x3aa878, emissiveIntensity: 1.1 }));
+  led.position.set(.16, 1.3, .11); bat.add(led);
+  const bp = hw(18.65, 2.47); bat.position.set(bp[0], 0, bp[1]); bat.rotation.y = ROT; extG.add(bat);
+  // heat-pump hot-water unit (compressor + tank) on the west wall near the front
   const hp = new THREE.Group();
   B(hp, .6, .5, .34, 0, .55, 0, MAT.steel);                // compressor
   const fan = new THREE.Mesh(new THREE.CylinderGeometry(.16, .16, .04, 16), MAT.fascia);
   fan.rotation.z = Math.PI / 2; fan.position.set(0, .55, -.18); hp.add(fan);
-  const tank = new THREE.Mesh(new THREE.CylinderGeometry(.28, .28, 1.6, 16), MAT.white);
-  tank.position.set(.55, .8, 0); hp.add(tank);
-  const hpP = hw(19.12, 14.6); hp.position.set(hpP[0], 0, hpP[1]); hp.rotation.y = ROT + Math.PI / 2; extG.add(hp);
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(.27, .27, 1.55, 16), MAT.white);
+  tank.position.set(.52, .78, 0); hp.add(tank);
+  const hpP = hw(19.1, 4.6); hp.position.set(hpP[0], 0, hpP[1]); hp.rotation.y = ROT + Math.PI / 2; extG.add(hp);
 }
 
 // ---------- interiors (dollhouse) ----------
@@ -939,15 +942,9 @@ function stair(g, u0, v0, y0, rise) {
 // clean dollhouse helpers: colour-coded floor rooms + a low perimeter curb,
 // NO chunky internal partitions (those read as a crude maze).
 function room(g, u0, v0, u1, v1, mat, y) {
+  // just the colour-coded floor plate — room walls now define the edges, so the
+  // old dark inlay border (which read busy/harsh) is gone.
   flatPoly(g, [hw(u0, v0), hw(u1, v0), hw(u1, v1), hw(u0, v1)], (y || 0) + .012, .03, mat, .35);
-  // thin dark inlay border so each room reads as a distinct plate
-  const T = .05, h = .035;
-  for (const [a, b, c, d] of [[u0, v0, u1, v0], [u1, v0, u1, v1], [u1, v1, u0, v1], [u0, v1, u0, v0]]) {
-    const A = hw(a, b), B = hw(c, d), len = Math.hypot(B[0] - A[0], B[1] - A[1]);
-    const m = new THREE.Mesh(new THREE.BoxGeometry(len, h, T), MAT.fascia);
-    m.position.set((A[0] + B[0]) / 2, (y || 0) + .05, (A[1] + B[1]) / 2);
-    m.rotation.y = -Math.atan2(B[1] - A[1], B[0] - A[0]); g.add(m);
-  }
 }
 function curb(g, u0, v0, u1, v1, y) {
   const h = .42, T = .12;

@@ -109,6 +109,16 @@ nav#topnav::-webkit-scrollbar { display: none; }
 .lang:hover { color: var(--ink); border-color: var(--line2); }
 .lang.active { background: var(--accent2); border-color: var(--accent2); color: #fff; }
 
+/* always-visible top-right language toggle (over the hero) */
+.lang-float {
+  position: fixed; top: 16px; right: 16px; z-index: 60; display: flex; gap: 4px;
+  background: rgba(11,14,20,.6); border: 1px solid var(--line); border-radius: 9px;
+  padding: 4px; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.lang-float .lang { background: transparent; }
+.lang-float .lang.active { background: var(--accent2); border-color: var(--accent2); }
+@media (max-width: 820px) { .lang-float { top: 10px; right: 10px; } }
+
 /* ============ sections ============ */
 section { max-width: 1180px; margin: 0 auto; padding: 96px 28px 26px; }
 .kicker { font-family: var(--mono); font-size: .65rem; letter-spacing: .26em; text-transform: uppercase; color: var(--accent2);
