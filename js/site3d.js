@@ -202,6 +202,8 @@ function makeMaterials() {
     renderDark: M({ color: 0x4b4f55, roughness: .8 }),
     roof: M({ map: TEX.roof, roughness: .85, side: THREE.DoubleSide }),
     fascia: M({ color: 0x2e3136, roughness: .55 }),
+    soffit: M({ color: 0xb9b3a4, roughness: .9 }),       // eave underside — reads as a shadow line
+    gutter: M({ color: 0xcfd2d4, roughness: .35, metalness: .55 }),  // Colorbond-style metal gutter
     glass: M({ color: 0x33454e, roughness: .04, metalness: .92, transparent: true, opacity: .9, envMapIntensity: 2.1 }),
     frame: M({ color: 0x191b1e, roughness: .45, metalness: .3 }),
     door: M({ color: 0x4f3a28, roughness: .6 }),
@@ -396,18 +398,21 @@ function hipRoof(g, u0, v0, u1, v1, yEave, pitchDeg, eave, opts = {}) {
     cap.rotation.y = -Math.atan2(r2[1] - r1[1], r2[0] - r1[0]);
     cap.castShadow = true; g.add(cap);
   }
-  // fascia + gutter
+  // dark fascia board + a Colorbond metal gutter clipped to its top edge
   for (const [A, Bp] of [[p00, p10], [p10, p11], [p11, p01], [p01, p00]]) {
     const len = Math.hypot(Bp[0] - A[0], Bp[1] - A[1]);
-    const f = new THREE.Mesh(new THREE.BoxGeometry(len, .24, .13), MAT.fascia);
-    f.position.set((A[0] + Bp[0]) / 2, yEave - .02, (A[1] + Bp[1]) / 2);
-    f.rotation.y = -Math.atan2(Bp[1] - A[1], Bp[0] - A[0]);
+    const ry = -Math.atan2(Bp[1] - A[1], Bp[0] - A[0]);
+    const f = new THREE.Mesh(new THREE.BoxGeometry(len, .22, .12), MAT.fascia);
+    f.position.set((A[0] + Bp[0]) / 2, yEave - .04, (A[1] + Bp[1]) / 2); f.rotation.y = ry;
     f.castShadow = true; g.add(f);
+    const gut = new THREE.Mesh(new THREE.BoxGeometry(len, .12, .15), MAT.gutter);
+    gut.position.set((A[0] + Bp[0]) / 2, yEave + .07, (A[1] + Bp[1]) / 2); gut.rotation.y = ry;
+    gut.castShadow = true; g.add(gut);
   }
-  if (!opts.noSoffit) {
+  if (!opts.noSoffit) {                                  // darker eave underside → crisp shadow line
     const sg = new THREE.ExtrudeGeometry(shapeFromPts([p00, p10, p11, p01]), { depth: .05, bevelEnabled: false });
     sg.rotateX(Math.PI / 2);
-    const sm = new THREE.Mesh(sg, MAT.render); sm.position.y = yEave - .06; g.add(sm);
+    const sm = new THREE.Mesh(sg, MAT.soffit); sm.position.y = yEave - .09; sm.receiveShadow = true; g.add(sm);
   }
   return { yR, r1, r2 };
 }
