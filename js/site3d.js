@@ -92,23 +92,36 @@ function makeTextures() {
       }
     }
   }, 5, 5);
-  TEX.grass = canvasTex(256, 256, (g, w, h) => {
+  // soft large-scale tonal blobs so a tiled lawn doesn't read as one flat colour
+  const grassPatches = (g, w, h, tones) => {
+    for (let i = 0; i < 26; i++) {
+      const cx = Math.random() * w, cy = Math.random() * h, r = 30 + Math.random() * 90;
+      const t = tones[Math.floor(Math.random() * tones.length)];
+      const bl = g.createRadialGradient(cx, cy, 2, cx, cy, r);
+      bl.addColorStop(0, t); bl.addColorStop(1, t.replace(/[\d.]+\)$/, '0)'));
+      g.fillStyle = bl; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill();
+    }
+  };
+  TEX.grass = canvasTex(512, 512, (g, w, h) => {
     g.fillStyle = '#5d8748'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 5200; i++) {
+    grassPatches(g, w, h, ['rgba(74,108,56,.5)', 'rgba(96,140,66,.45)', 'rgba(120,128,72,.30)', 'rgba(58,92,46,.5)']);
+    for (let i = 0; i < 14000; i++) {
       const v = Math.random();
-      g.fillStyle = `rgba(${60 + v * 50},${112 + v * 52},${48 + v * 36},.55)`;
-      g.fillRect(Math.random() * w, Math.random() * h, 1.6, 2.6);
+      g.fillStyle = `rgba(${60 + v * 50},${112 + v * 52},${48 + v * 36},.5)`;
+      g.fillRect(Math.random() * w, Math.random() * h, 1.5, 2.6);
     }
-  }, 9, 9);
-  TEX.lawn = canvasTex(256, 256, (g, w, h) => {
-    g.fillStyle = '#669150'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 5200; i++) {
+  }, 7, 7);
+  TEX.lawn = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#679251'; g.fillRect(0, 0, w, h);
+    // alternating mow stripes (lighter / darker bands)
+    for (let x = 0; x < w; x += 96) { g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(x, 0, 48, h); g.fillStyle = 'rgba(0,0,0,.045)'; g.fillRect(x + 48, 0, 48, h); }
+    grassPatches(g, w, h, ['rgba(86,132,62,.45)', 'rgba(110,150,74,.4)', 'rgba(132,138,82,.26)', 'rgba(70,108,54,.45)']);
+    for (let i = 0; i < 14000; i++) {
       const v = Math.random();
-      g.fillStyle = `rgba(${68 + v * 52},${126 + v * 52},${54 + v * 36},.5)`;
-      g.fillRect(Math.random() * w, Math.random() * h, 1.6, 2.8);
+      g.fillStyle = `rgba(${68 + v * 52},${126 + v * 52},${54 + v * 36},.45)`;
+      g.fillRect(Math.random() * w, Math.random() * h, 1.5, 2.8);
     }
-    for (let x = 0; x < w; x += 64) { g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(x, 0, 32, h); }
-  }, 4, 4);
+  }, 3, 3);
   TEX.asphalt = canvasTex(256, 256, (g, w, h) => {
     g.fillStyle = '#3a3d42'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 4200; i++) {
