@@ -170,6 +170,11 @@ function makeTextures() {
       g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(0, y + 5, w, 3);
     }
   }, 1, 1);
+  TEX.num13 = canvasTex(128, 128, (g, w, h) => {
+    g.fillStyle = '#1a1d24'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#E2A07A'; g.font = '700 78px IBM Plex Mono, monospace';
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('13', w / 2, h / 2 + 4);
+  }, 1, 1);
   TEX.pebble = canvasTex(256, 256, (g, w, h) => {
     g.fillStyle = '#8a847a'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 2600; i++) {
@@ -597,6 +602,37 @@ function wheelieBin(g, u, v, lidHex, rot) {
   const p = hw(u, v); o.position.set(p[0], 0, p[1]); o.rotation.y = (rot || 0) + ROT; g.add(o);
 }
 
+// a potted plant (container, not a garden bed) — tapered pot + soft foliage
+function pottedPlant(g, u, v, s) {
+  const o = new THREE.Group();
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(.2 * s, .15 * s, .42 * s, 14), MAT.renderDark);
+  pot.position.y = .21 * s; pot.castShadow = true; pot.receiveShadow = true; o.add(pot);
+  for (let i = 0; i < 5; i++) {
+    const lf = new THREE.Mesh(new THREE.IcosahedronGeometry((.16 + Math.random() * .1) * s, 1), i % 2 ? MAT.leaf : MAT.leaf3);
+    lf.position.set((Math.random() - .5) * .26 * s, (.5 + Math.random() * .35) * s, (Math.random() - .5) * .26 * s);
+    lf.scale.y = 1.25; lf.castShadow = true; o.add(lf);
+  }
+  const p = hw(u, v); o.position.set(p[0], 0, p[1]); g.add(o);
+}
+
+// front-entry detailing: house number, sconce, doormat, flanking planters
+function buildEntry() {
+  // number plaque "13" on the wall beside the door
+  const num = new THREE.Mesh(new THREE.PlaneGeometry(.32, .32), new THREE.MeshStandardMaterial({ map: TEX.num13, roughness: .6, side: THREE.DoubleSide }));
+  const np = hw(7.32, 2.36); num.position.set(np[0], 1.75, np[1]); num.rotation.y = ROT; extG.add(num);
+  // wall sconce by the door (small box + warm emissive face)
+  const sc = new THREE.Group();
+  B(sc, .12, .26, .1, 0, 0, 0, MAT.fascia);
+  const glo = new THREE.Mesh(new THREE.BoxGeometry(.09, .2, .03), new THREE.MeshStandardMaterial({ color: 0xffe7b0, emissive: 0xffcaa0, emissiveIntensity: .9 }));
+  glo.position.z = .06; sc.add(glo);
+  const scp = hw(4.45, 2.31); sc.position.set(scp[0], 1.9, scp[1]); sc.rotation.y = ROT; extG.add(sc);
+  // doormat at the threshold
+  flatPoly(extG, [[5.0, 1.7], [6.6, 1.7], [6.6, 2.2], [5.0, 2.2]].map(p => hw(...p)), .14, .02, MAT.dwood, .3);
+  // flanking potted plants
+  pottedPlant(extG, 4.55, 1.85, 1.0);
+  pottedPlant(extG, 7.05, 1.85, 1.0);
+}
+
 // a clipped architectural shrub (low maintenance, not a flower bed)
 function shrub(g, u, v, s) {
   const o = new THREE.Group();
@@ -774,6 +810,7 @@ function buildExterior() {
   ant.traverse(m => { if (m.isMesh) m.castShadow = true; }); roofG.add(ant);
 
   buildEnergy();
+  buildEntry();
 }
 
 // all-electric plant: battery + heat-pump hot water on the service wall (Pimpala side)
