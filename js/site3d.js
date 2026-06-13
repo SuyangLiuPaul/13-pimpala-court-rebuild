@@ -342,7 +342,23 @@ function wallRun(group, a, b, H, T, mat, openings, yBase = 0) {
     if (t === 'window') glazing(g, s.x0, s.x1, sill, head, T, true);
     if (t === 'door') { const d = new THREE.Mesh(new THREE.BoxGeometry(s.x1 - s.x0 - .08, head - .06, T * .5), s.o.glass ? MAT.glass : MAT.door); d.position.set((s.x0 + s.x1) / 2, head / 2, 0); d.castShadow = true; g.add(d); }
     if (t === 'stacker') glazing(g, s.x0, s.x1, .04, head, T, false);
-    if (t === 'garage') { const d = new THREE.Mesh(new THREE.BoxGeometry(s.x1 - s.x0 - .1, head - .08, T * .45), MAT.garage); d.position.set((s.x0 + s.x1) / 2, head / 2, 0); g.add(d); }
+    if (t === 'garage') {
+      const gw = s.x1 - s.x0 - .12, gh = head - .08, gcx = (s.x0 + s.x1) / 2, rows = 5, rh = gh / rows;
+      const d = new THREE.Mesh(new THREE.BoxGeometry(gw, gh, T * .42), MAT.garage);
+      d.position.set(gcx, gh / 2 + .04, 0); d.castShadow = true; g.add(d);
+      for (let i = 1; i < rows; i++) {                                   // recessed section grooves
+        const gr = new THREE.Mesh(new THREE.BoxGeometry(gw, .03, T * .5), MAT.fascia);
+        gr.position.set(gcx, .04 + i * rh, T * .03); g.add(gr);
+      }
+      for (let i = 0; i < rows - 1; i++) {                               // raised panel ribs
+        const rib = new THREE.Mesh(new THREE.BoxGeometry(gw * .9, rh * .5, T * .05), MAT.garage);
+        rib.position.set(gcx, .04 + i * rh + rh / 2, T * .22); g.add(rib);
+      }
+      for (let k = 0; k < 4; k++) {                                      // top row of lites
+        const win = new THREE.Mesh(new THREE.BoxGeometry(gw / 5.5, rh * .5, T * .22), MAT.glass);
+        win.position.set(gcx - gw * .3 + k * gw * .2, .04 + (rows - .5) * rh, T * .12); g.add(win);
+      }
+    }
     prev = s.x1;
   }
   if (prev < len - .004) panel(g, prev, len, 0, H, T, mat);
