@@ -1133,8 +1133,8 @@ function initScene() {
   sun = new THREE.DirectionalLight(0xfff2dc, 2.0);
   const fineShadows = matchMedia('(pointer: fine)').matches;
   sun.castShadow = true; sun.shadow.mapSize.set(fineShadows ? 4096 : 2048, fineShadows ? 4096 : 2048);
-  const sr = 52; Object.assign(sun.shadow.camera, { left: -sr, right: sr, top: sr, bottom: -sr, near: 1, far: 170 });
-  sun.shadow.bias = -.0004;
+  const sr = 52; Object.assign(sun.shadow.camera, { left: -sr, right: sr, top: sr, bottom: -sr, near: 1, far: 200 });
+  sun.shadow.bias = -.0004; sun.shadow.radius = fineShadows ? 3 : 1.5;   // soft penumbra
   scene.add(sun); scene.add(sun.target);
   scene.add(new THREE.AmbientLight(0xffffff, .05));
 
@@ -1169,10 +1169,12 @@ function initScene() {
 // Studio light: archviz "cheat" sun from the SE that flatters the street facades.
 // Moving the slider switches to the physically-true Melbourne solar path.
 function studioSun() {
-  sun.position.set(52, 64, 58);                    // high SSE — front + east faces lit
-  sun.intensity = 2.25;
-  sun.color.set(0xfff1dc);
-  hemi.intensity = .4;
+  // lower, warmer raking light (~27° elevation, SE) — long shadows that reveal
+  // the brick/roof relief, window reveals, garage ribs and eaves (golden hour)
+  sun.position.set(62, 42, 66);
+  sun.intensity = 2.5;
+  sun.color.set(0xffe6c2);
+  hemi.intensity = .34;
   if (renderer) reshadow();
 }
 // filmic colour grade: gentle contrast S-curve, split-tone (warm shadows /
