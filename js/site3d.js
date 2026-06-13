@@ -764,7 +764,9 @@ function buildBurwoodHighway(g) {
 // ============================================================
 function buildLot() {
   lotG = new THREE.Group();
-  flatPoly(lotG, SITE.lot.slice(0, -1).map(p => [p[0], -p[1]]), -.045, .065, MAT.lawn, .25);
+  // low-maintenance pebble groundcover over the whole lot (NO front lawn / garden
+  // beds — per the brief). A synthetic-turf panel + clipped shrubs are added below.
+  flatPoly(lotG, SITE.lot.slice(0, -1).map(p => [p[0], -p[1]]), -.045, .065, MAT.pebble, .6);
   // fences: east [0,1], rear [7,8] — palings + capping rail + posts
   for (const [i, j] of [[0, 1], [7, 8]]) {
     const a = S2W(SITE.lot[i]), b = S2W(SITE.lot[j]);
@@ -822,12 +824,16 @@ function buildLot() {
   B(cl, 2.1, .03, 1.3, 0, 1.55, 0, MAT.steel, false);
   const cp = hw(10.8, 17.5); cl.position.set(cp[0], 0, cp[1]); lotG.add(cl);
 
-  // ---- low-maintenance pebble foundation strip (no garden beds) + clipped shrubs ----
-  flatPoly(lotG, [[0, -.55], [12.4, -.55], [12.4, 0], [0, 0]].map(p => hw(...p)), 0, .04, MAT.pebble, .6);   // front strip
-  flatPoly(lotG, [[-.55, 0], [0, 0], [0, 16.7], [-.55, 16.7]].map(p => hw(...p)), 0, .04, MAT.pebble, .6);   // east strip
-  flatPoly(lotG, [[0, 16.7], [12.4, 16.7], [12.4, 17.0], [0, 17.0]].map(p => hw(...p)), 0, .04, MAT.pebble, .6); // rear strip
-  // a few architectural clipped shrubs flanking the entry porch + along the front
-  [[5.0, -0.9], [6.6, -0.9], [9.5, -0.35], [11.6, -0.35], [-0.3, 3.0], [-0.3, 9.0]].forEach(([u, v], i) => shrub(lotG, u, v, .35 + (i % 2) * .12));
+  // ---- low-maintenance landscape: synthetic-turf panel in the rear secluded
+  // yard (usable private open space) + architectural clipped shrubs; the rest of
+  // the lot is the pebble groundcover laid down above (no lawn / garden beds) ----
+  flatPoly(lotG, [[8.7, 16.95], [12.9, 16.95], [12.9, 19.0], [8.7, 19.0]].map(p => hw(...p)), 0, .05, MAT.lawn, .5);  // synthetic turf, rear POS
+  // clipped buxus-ball shrubs: flank the entry, line the south (Benwerrin) front
+  // and the east setback, and edge the rear terrace — varied sizes for realism
+  [[5.0, -0.9], [6.6, -0.9], [9.5, -0.4], [11.6, -0.4], [2.2, -0.8],          // entry + south front
+   [-0.35, 2.6], [-0.35, 5.6], [-0.35, 8.6], [-0.35, 11.6], [-0.35, 14.4],    // east setback line
+   [1.4, 18.4], [3.4, 18.6], [5.6, 18.6], [7.6, 18.5]                         // rear terrace edge
+  ].forEach(([u, v], i) => shrub(lotG, u, v, .32 + (i % 3) * .09));
 
   // ---- kerbside 3-bin set tucked beside the garage (lived-in scale prop) ----
   wheelieBin(lotG, 13.0, 0.4, 0xb23a2a, Math.PI);   // red lid — general waste
