@@ -703,6 +703,33 @@ function buildExterior() {
   const skyP = hw(4.0, 4.0); sky.position.set(skyP[0], ridgeY - (6.6 - 4.0) * Math.tan(pitch) + .1, skyP[1]);
   sky.rotation.y = ROT; sky.rotation.z = -pitch; roofG.add(sky);
 
+  // ---- roof penetrations on the bare east slope (vertical fittings) ----
+  const slopeY = (u, ridgeU) => ridgeY - Math.abs(ridgeU - u) * Math.tan(pitch);
+  const whirly = (u, v, ridgeU = 6.6) => {                 // wind-driven roof vent
+    const y = slopeY(u, ridgeU), p = hw(u, v);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(.14, .17, .1, 12), MAT.fascia);
+    base.position.set(p[0], y + .05, p[1]); roofG.add(base);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(.16, 14, 8, 0, 6.3, 0, 1.5), MAT.steel);
+    dome.position.set(p[0], y + .11, p[1]); dome.castShadow = true; roofG.add(dome);
+  };
+  const flue = (u, v, h, ridgeU = 6.6) => {                // plumbing / range flue
+    const y = slopeY(u, ridgeU), p = hw(u, v);
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(.06, .07, h, 10), MAT.fascia);
+    pipe.position.set(p[0], y + h / 2, p[1]); pipe.castShadow = true; roofG.add(pipe);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(.1, .1, .05, 10), MAT.fascia);
+    cap.position.set(p[0], y + h + .03, p[1]); roofG.add(cap);
+  };
+  whirly(3.4, 5.6); whirly(2.8, 12.0);                     // two vents, main east slope
+  flue(2.3, 14.4, .7);                                     // kitchen flue near wet wing
+  flue(15.4, 11.5, .6, 15.7);                              // garage-wing flue
+  // slim TV antenna on the main ridge
+  const ant = new THREE.Group();
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(.018, .018, 1.5, 6), MAT.fascia);
+  mast.position.y = .75; ant.add(mast);
+  for (let i = 0; i < 5; i++) { const arm = new THREE.Mesh(new THREE.BoxGeometry(.55 - i * .07, .015, .015), MAT.fascia); arm.position.set(0, 1.0 + i * .11, 0); ant.add(arm); }
+  const antP = hw(6.6, 2.6); ant.position.set(antP[0], ridgeY, antP[1]); ant.rotation.y = ROT;
+  ant.traverse(m => { if (m.isMesh) m.castShadow = true; }); roofG.add(ant);
+
   buildEnergy();
 }
 
