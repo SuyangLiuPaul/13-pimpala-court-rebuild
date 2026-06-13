@@ -184,7 +184,7 @@ function makeMaterials() {
     renderDark: M({ color: 0x4b4f55, roughness: .8 }),
     roof: M({ map: TEX.roof, roughness: .85, side: THREE.DoubleSide }),
     fascia: M({ color: 0x2e3136, roughness: .55 }),
-    glass: M({ color: 0x2e3f48, roughness: .05, metalness: .9, transparent: true, opacity: .92, envMapIntensity: 1.4 }),
+    glass: M({ color: 0x33454e, roughness: .04, metalness: .92, transparent: true, opacity: .9, envMapIntensity: 2.1 }),
     frame: M({ color: 0x191b1e, roughness: .45, metalness: .3 }),
     door: M({ color: 0x4f3a28, roughness: .6 }),
     garage: M({ map: TEX.garage, roughness: .5, metalness: .35 }),
@@ -874,12 +874,38 @@ function buildInteriorUpper() {
 // ============================================================
 function initScene() {
   scene = new THREE.Scene();
-  scene.background = canvasTex(16, 512, (g, w, h) => {
+  // equirect sky: blue zenith → warm hazy horizon → soft ground bounce, with a
+  // broad sun glow + high cloud streaks. Used as the skybox AND (via PMREM) the
+  // reflection environment, so glass and car paint mirror a believable sky.
+  const skyTex = canvasTex(1024, 512, (g, w, h) => {
     const gr = g.createLinearGradient(0, 0, 0, h);
-    gr.addColorStop(0, '#5d92c9'); gr.addColorStop(.5, '#9cc0e0'); gr.addColorStop(.78, '#d5e0e6'); gr.addColorStop(1, '#e8e4da');
+    gr.addColorStop(0, '#2766b6');      // zenith
+    gr.addColorStop(.30, '#4f8fcf');
+    gr.addColorStop(.44, '#8fb8de');
+    gr.addColorStop(.49, '#cadbe8');
+    gr.addColorStop(.5, '#e6ebe8');     // thin horizon haze
+    gr.addColorStop(.55, '#c9cec2');
+    gr.addColorStop(1, '#7d8a6e');      // nadir ground bounce
     g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    // soft warm sun glow (approx sun azimuth/elevation), wide falloff
+    const sx = w * 0.62, sy = h * 0.30;
+    const glow = g.createRadialGradient(sx, sy, 4, sx, sy, w * 0.22);
+    glow.addColorStop(0, 'rgba(255,248,228,.95)');
+    glow.addColorStop(.25, 'rgba(255,240,205,.55)');
+    glow.addColorStop(1, 'rgba(255,240,205,0)');
+    g.fillStyle = glow; g.beginPath(); g.arc(sx, sy, w * 0.22, 0, 7); g.fill();
+    // faint high cloud streaks above the horizon
+    for (let i = 0; i < 26; i++) {
+      const cy = h * (0.30 + Math.random() * 0.16), cx = Math.random() * w, cw = 40 + Math.random() * 130;
+      const cl = g.createRadialGradient(cx, cy, 2, cx, cy, cw);
+      cl.addColorStop(0, 'rgba(255,255,255,.16)'); cl.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = cl; g.beginPath(); g.ellipse(cx, cy, cw, cw * 0.22, 0, 0, 7); g.fill();
+    }
   });
-  scene.fog = new THREE.Fog(0xc3d2dc, 130, 320);
+  skyTex.mapping = THREE.EquirectangularReflectionMapping;
+  scene.background = skyTex;
+  scene.fog = new THREE.Fog(0xc8d6dc, 150, 300);
+  scene.userData.skyTex = skyTex;   // PMREM environment is built after the renderer exists
 
   const heroEl = document.getElementById('hero');
   // tighter near/far so SSAO + shadow depth precision is usable at house scale
@@ -894,16 +920,11 @@ function initScene() {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.02;
 
-  // image-based lighting: PMREM from a generated sky — gives glass/metal real reflections
-  const eqTex = canvasTex(512, 256, (g, w, h) => {
-    const gr = g.createLinearGradient(0, 0, 0, h);
-    gr.addColorStop(0, '#8fb6dd'); gr.addColorStop(.45, '#bfd5e6'); gr.addColorStop(.62, '#e8e8e0');
-    gr.addColorStop(.66, '#9fae8a'); gr.addColorStop(1, '#5d7a4a');
-    g.fillStyle = gr; g.fillRect(0, 0, w, h);
-  });
-  eqTex.mapping = THREE.EquirectangularReflectionMapping;
+  // image-based lighting: PMREM from the SAME sky texture → glass/metal/car
+  // paint reflect the real skybox (sun glow, blue zenith, hazy horizon).
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromEquirectangular(eqTex).texture;
+  pmrem.compileEquirectangularShader();
+  scene.environment = pmrem.fromEquirectangular(scene.userData.skyTex).texture;
   pmrem.dispose();
 
   hemi = new THREE.HemisphereLight(0xcfe2ff, 0x6e6a58, .42); scene.add(hemi);
