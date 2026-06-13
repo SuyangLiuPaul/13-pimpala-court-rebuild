@@ -217,6 +217,7 @@ function makeMaterials() {
     trunk: M({ color: 0x5d4530, roughness: .95 }),
     leaf: M({ color: 0x4d7a3a, roughness: 1 }),
     leaf2: M({ color: 0x5d8a44, roughness: 1 }),
+    leaf3: M({ color: 0x37592a, roughness: 1 }),     // shadowed canopy underside
     solar: M({ color: 0x10141f, roughness: .25, metalness: .55 }),
     steel: M({ color: 0xc4c8cc, roughness: .3, metalness: .6 }),
     floorG: M({ color: 0xcdbfa3, roughness: .85 }),
@@ -474,12 +475,25 @@ function buildSiteCtx() {
 }
 function tree(g, x, z, s) {
   const o = new THREE.Group();
-  const tr = new THREE.Mesh(new THREE.CylinderGeometry(.13 * s, .19 * s, 1.7 * s, 7), MAT.trunk);
-  tr.position.y = .85 * s; tr.castShadow = true; o.add(tr);
-  for (let i = 0; i < 3; i++) {
-    const lf = new THREE.Mesh(new THREE.IcosahedronGeometry((.85 - i * .14) * s, 1), i % 2 ? MAT.leaf : MAT.leaf2);
-    lf.position.set(((i * 7919) % 10 / 10 - .5) * s * .8, (1.9 + i * .55) * s, ((i * 104729) % 10 / 10 - .5) * s * .8);
-    lf.castShadow = true; o.add(lf);
+  // tapered trunk with a slight natural lean
+  const tr = new THREE.Mesh(new THREE.CylinderGeometry(.09 * s, .21 * s, 2.0 * s, 8), MAT.trunk);
+  tr.position.y = 1.0 * s; tr.rotation.z = (Math.random() - .5) * .09; tr.castShadow = true; o.add(tr);
+  // a few branch stubs reaching into the canopy
+  for (let b = 0; b < 3; b++) {
+    const br = new THREE.Mesh(new THREE.CylinderGeometry(.04 * s, .07 * s, .9 * s, 6), MAT.trunk);
+    const a = b * 2.1 + Math.random();
+    br.position.set(Math.cos(a) * .25 * s, (1.7 + b * .2) * s, Math.sin(a) * .25 * s);
+    br.rotation.set(Math.cos(a) * .7, 0, -Math.sin(a) * .7); br.castShadow = true; o.add(br);
+  }
+  // layered organic canopy from overlapping foliage clumps, varied tone & size
+  const cy = 2.3 * s, R = 1.05 * s;
+  for (let i = 0; i < 11; i++) {
+    const ang = Math.random() * 6.28, rad = Math.random() * R * .72;
+    const size = (.4 + Math.random() * .42) * s;
+    const lf = new THREE.Mesh(new THREE.IcosahedronGeometry(size, 1), [MAT.leaf, MAT.leaf2, MAT.leaf3][i % 3]);
+    lf.position.set(Math.cos(ang) * rad, cy + (Math.random() - .35) * R * .95, Math.sin(ang) * rad);
+    lf.scale.set(1, .88, 1); lf.rotation.y = Math.random() * 3;
+    lf.castShadow = true; lf.receiveShadow = true; o.add(lf);
   }
   o.position.set(x, 0, z); g.add(o);
 }
