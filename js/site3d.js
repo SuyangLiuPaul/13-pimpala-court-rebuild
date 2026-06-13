@@ -105,50 +105,55 @@ function normalTex(colorTex, strength) {
 }
 const TEX = {};
 function makeTextures() {
+  // charcoal/grey face brick — the dominant 2024–26 Melbourne project-builder
+  // 'Category-1 grey' look. Light-grey mortar, near-neutral charcoal faces.
   TEX.brick = canvasTex(512, 512, (g, w, h) => {
-    g.fillStyle = '#6f655a'; g.fillRect(0, 0, w, h);     // recessed mortar (dark)
+    g.fillStyle = '#8c8a86'; g.fillRect(0, 0, w, h);     // light grey mortar
     const bw = 84, bh = 32;
     for (let y = 0, r = 0; y < h; y += bh, r++) for (let x = -bw; x < w + bw; x += bw) {
       const ox = (r % 2) * bw / 2;
-      const base = 120 + Math.floor(Math.random() * 36);
+      const base = 72 + Math.floor(Math.random() * 26);   // charcoal-grey, neutral
       // brick face with a soft inner gradient so it reads slightly proud of the mortar
       const bx = x + ox + 3, by = y + 3, bwi = bw - 6, bhi = bh - 6;
       const grd = g.createLinearGradient(bx, by, bx, by + bhi);
-      grd.addColorStop(0, `rgb(${base + 8},${base - 2},${base - 14})`);
-      grd.addColorStop(1, `rgb(${base - 10},${base - 19},${base - 30})`);
+      grd.addColorStop(0, `rgb(${base + 7},${base + 6},${base + 8})`);
+      grd.addColorStop(1, `rgb(${base - 11},${base - 11},${base - 9})`);
       g.fillStyle = grd; g.fillRect(bx, by, bwi, bhi);
-      // subtle clinker speckle on the face
+      // subtle tonal speckle on the face (neutral, no warm cast)
       for (let s = 0; s < 18; s++) {
-        const t = base + (Math.random() - .5) * 40;
-        g.fillStyle = `rgba(${t},${t - 9},${t - 20},.5)`;
+        const t = base + (Math.random() - .5) * 34;
+        g.fillStyle = `rgba(${t},${t},${t + 2},.5)`;
         g.fillRect(bx + Math.random() * bwi, by + Math.random() * bhi, 2, 2);
       }
     }
   }, 3.0, 1.5);
+  // Surfmist off-white acrylic render for the upper storey (Hebel-style)
   TEX.render = canvasTex(128, 128, (g, w, h) => {
-    g.fillStyle = '#ece6da'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#e9e7e0'; g.fillRect(0, 0, w, h);
     for (let i = 0; i < 1800; i++) {
-      g.fillStyle = `rgba(${190 + Math.random() * 40},${186 + Math.random() * 38},${172 + Math.random() * 36},.5)`;
+      g.fillStyle = `rgba(${214 + Math.random() * 34},${212 + Math.random() * 32},${206 + Math.random() * 30},.45)`;
       g.fillRect(Math.random() * w, Math.random() * h, 1.4, 1.4);
     }
   }, 4, 4);
+  // Colorbond Monument steel roof — fine standing-seam pans running down-slope,
+  // near-black matt charcoal (the standard new-build look, not concrete tile)
   TEX.roof = canvasTex(512, 512, (g, w, h) => {
-    g.fillStyle = '#41454c'; g.fillRect(0, 0, w, h);
-    const th = 44;                                       // concrete-tile course height
-    for (let y = 0, r = 0; y < h; y += th, r++) {
-      // each tile course: shaded body + a raised leading lip + deep shadow gap below
-      const grd = g.createLinearGradient(0, y, 0, y + th);
-      grd.addColorStop(0, '#4b4f57'); grd.addColorStop(.82, '#3a3d44'); grd.addColorStop(1, '#2a2c31');
-      g.fillStyle = grd; g.fillRect(0, y, w, th);
-      g.fillStyle = 'rgba(255,255,255,.10)'; g.fillRect(0, y + 2, w, 3);   // lip highlight
-      g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, y + th - 4, w, 4);     // shadow gap
-      // vertical tile joints, offset each course
-      for (let x = 0; x < w; x += 64) {
-        g.fillStyle = 'rgba(0,0,0,.32)'; g.fillRect(x + (r % 2 ? 32 : 0), y + 4, 3, th - 7);
-        g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(x + (r % 2 ? 35 : 3), y + 4, 1, th - 7);
-      }
+    const grd0 = g.createLinearGradient(0, 0, w, 0);
+    grd0.addColorStop(0, '#26282c'); grd0.addColorStop(.5, '#2c2e33'); grd0.addColorStop(1, '#25272b');
+    g.fillStyle = grd0; g.fillRect(0, 0, w, h);
+    const pan = 30;                                       // standing-seam pan width
+    for (let x = 0; x < w; x += pan) {
+      g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(x, 0, 1.5, h);          // seam highlight
+      g.fillStyle = 'rgba(0,0,0,.42)'; g.fillRect(x + 2, 0, 2.5, h);            // seam shadow
+      g.fillStyle = 'rgba(255,255,255,.025)'; g.fillRect(x + pan * .5, 0, 1, h); // faint pan crown
     }
-  }, 5, 5);
+    // very subtle long streak weathering down the pans
+    for (let i = 0; i < 60; i++) {
+      const sx = Math.random() * w, sy = Math.random() * h, sl = 30 + Math.random() * 120;
+      g.fillStyle = `rgba(${20 + Math.random() * 20},${22 + Math.random() * 20},${26 + Math.random() * 20},.08)`;
+      g.fillRect(sx, sy, 2, sl);
+    }
+  }, 4, 8);   // stretched along-slope so the seams read as long pans
   // soft large-scale tonal blobs so a tiled lawn doesn't read as one flat colour
   const grassPatches = (g, w, h, tones) => {
     for (let i = 0; i < 26; i++) {
@@ -220,11 +225,12 @@ function makeTextures() {
       g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(x + 13, 0, 3, h);
     }
   }, 6, 1);
+  // Monument matt sectional garage door — faint flush section lines
   TEX.garage = canvasTex(256, 256, (g, w, h) => {
-    g.fillStyle = '#cfd2d6'; g.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y += 36) {
-      g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(0, y, w, 5);
-      g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(0, y + 5, w, 3);
+    g.fillStyle = '#2a2c30'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 40) {
+      g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(0, y, w, 2.5);            // recessed section joint
+      g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(0, y + 2.5, w, 1.5);
     }
   }, 1, 1);
   TEX.num13 = canvasTex(128, 128, (g, w, h) => {
@@ -278,15 +284,15 @@ function makeMaterials() {
   MAT = {
     brick: M({ map: TEX.brick, roughness: .94 }),
     render: M({ map: TEX.render, roughness: .82 }),
-    renderDark: M({ color: 0x4b4f55, roughness: .8 }),
-    roof: M({ map: TEX.roof, roughness: .85, side: THREE.DoubleSide }),
-    fascia: M({ color: 0x2e3136, roughness: .55 }),
+    renderDark: M({ color: 0x3a3d42, roughness: .8 }),   // inter-storey junction shadow line
+    roof: M({ map: TEX.roof, roughness: .52, metalness: .35, side: THREE.DoubleSide }),  // matt Colorbond steel
+    fascia: M({ color: 0x282a2e, roughness: .5, metalness: .25 }),                       // Monument
     soffit: M({ color: 0xb9b3a4, roughness: .9 }),       // eave underside — reads as a shadow line
-    gutter: M({ color: 0xcfd2d4, roughness: .35, metalness: .55 }),  // Colorbond-style metal gutter
-    glass: M({ color: 0x33454e, roughness: .04, metalness: .92, transparent: true, opacity: .9, envMapIntensity: 2.1 }),
-    frame: M({ color: 0x191b1e, roughness: .45, metalness: .3 }),
+    gutter: M({ color: 0x282a2e, roughness: .5, metalness: .35 }),    // Monument Colorbond gutter (one dark line)
+    glass: M({ color: 0x2b3a42, roughness: .06, metalness: .25, transparent: true, opacity: .88, envMapIntensity: 1.3 }),  // domestic low-E, not a mirror
+    frame: M({ color: 0x16181b, roughness: .45, metalness: .3 }),     // black aluminium
     door: M({ color: 0x4f3a28, roughness: .6 }),
-    garage: M({ map: TEX.garage, roughness: .5, metalness: .35 }),
+    garage: M({ map: TEX.garage, roughness: .58, metalness: .2 }),    // Monument matt sectional
     grass: M({ map: TEX.grass, roughness: 1 }),
     lawn: M({ map: TEX.lawn, roughness: 1 }),
     asphalt: M({ map: TEX.asphalt, roughness: .96 }),
@@ -342,7 +348,7 @@ function makeMaterials() {
   const NV = (s) => new THREE.Vector2(s, s);
   const nm = (mat, tex, str, scale) => { mat.normalMap = normalTex(tex, str); mat.normalScale = NV(scale); };
   nm(MAT.brick, TEX.brick, 14, .85);     // deep mortar joints
-  nm(MAT.roof, TEX.roof, 12, 1.0);       // tile steps
+  nm(MAT.roof, TEX.roof, 5, .5);         // crisp thin steel seams (not chunky tiles)
   nm(MAT.render, TEX.render, 4, .25);    // fine acrylic-render tooth
   nm(MAT.agg, TEX.agg, 8, .55);          // exposed-aggregate pebbles
   nm(MAT.paver, TEX.paver, 9, .6);       // paver joints
@@ -1515,9 +1521,9 @@ function setTime(hour) {
   if (cloudMat) cloudMat.opacity = 0.8 * day;
 
   // ---- glass reads dark & less reflective at night (interior glow dominates) ----
-  MAT.glass.color.setHex(lerpHex(0x0a0e12, 0x33454e, civil));
-  MAT.glass.envMapIntensity = lerp(0.25, 2.1, civil);
-  MAT.glass.opacity = lerp(0.96, 0.9, civil);
+  MAT.glass.color.setHex(lerpHex(0x0a0e12, 0x2b3a42, civil));
+  MAT.glass.envMapIntensity = lerp(0.25, 1.3, civil);
+  MAT.glass.opacity = lerp(0.95, 0.88, civil);
 
   if (renderer) reshadow();
 }
