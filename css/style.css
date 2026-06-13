@@ -56,8 +56,12 @@ body { background: var(--bg); color: var(--ink); font-family: var(--sans); line-
 .hbtn:hover { border-color: var(--accent); color: #fff; background: rgba(226,160,122,.1); }
 .hbtn.active { background: var(--accent2); border-color: var(--accent2); color: #fff; }
 .sunrow { display: flex; align-items: center; gap: 11px; font-family: var(--mono); font-size: .62rem; color: #fff; }
-.sunrow input { width: 200px; accent-color: var(--accent); cursor: pointer; }
+.sunrow input { width: 180px; accent-color: var(--accent); cursor: pointer; }
 .sunrow .note { color: var(--muted); }
+#sunLabel { min-width: 42px; letter-spacing: .04em; }
+.hbtn.now { font-size: .6rem; padding: 6px 11px; line-height: 1; }
+.hbtn.now.active { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.hbtn.now.active::before { content: '● '; color: #6ee787; }
 #statbar {
   position: absolute; z-index: 10; left: 28px; bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   display: flex; gap: 24px;

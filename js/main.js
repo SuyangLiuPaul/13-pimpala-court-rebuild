@@ -36,6 +36,7 @@ function renderAll() {
     `<button class="hbtn zoom" id="zoomIn" aria-label="zoom in">＋</button>` +
     `<button class="hbtn zoom" id="zoomOut" aria-label="zoom out">－</button>`;
   $('#sunTag').textContent = L.hero.sun;
+  if (L.hero.now) $('#nowBtn').textContent = L.hero.now;
   $('#sunNote').textContent = L.hero.sunNote;
   $('#scrollCue').textContent = '▼ ' + L.hero.scroll;
   $('#statbar').innerHTML = L.hero.stats.map(s => `<div><b>${s[0]}</b><span>${s[1]}</span></div>`).join('');

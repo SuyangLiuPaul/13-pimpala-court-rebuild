@@ -4,13 +4,70 @@
 // House frame: u 0(east)→19(west), v 0(front/south)→16+(rear)
 // World: x = site east, z = −site north.
 // ============================================================
-let scene, camera, renderer, sun, hemi, composer, fxaaPass, ssaoPass;
+let scene, camera, renderer, sun, hemi, ambient, composer, fxaaPass, ssaoPass;
 let extG, roofG, siteCtxG, lotG, intGround, intUpper;
+let skyMesh, skyMat, stars, moonSprite, cloudMat;
 let view = 'exterior', autoRot = false, roofOn = true;
 let rotY = -0.7, rotX = 0.27, dist = 46, tgt = { x: 0, y: 2.8, z: -2 };
 let needsRender = true, heroVisible = true;
+// day/night: live = follow the real Melbourne clock; timeHour = the modelled hour (0–24)
+let timeHour = 14.5, liveClock = true, clockTimer = 0;
+// night-driven materials/objects, ramped in setTime()
+const litWindows = [], nbrWindows = [], streetLamps = [];
 const invalidate = () => { needsRender = true; };
 const reshadow = () => { renderer.shadowMap.needsUpdate = true; needsRender = true; };
+
+// ---------- real Melbourne time + sun position ----------
+const SITE_LL = SITE.meta.originLatLon;   // [lat, lon] of the lot
+// Australia/Melbourne UTC offset (hours) for a given instant — handles AEST/AEDT automatically
+function melbOffsetHours(d) {
+  const u = new Date(d.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const m = new Date(d.toLocaleString('en-US', { timeZone: 'Australia/Melbourne' }));
+  return Math.round((m - u) / 3.6e6 * 2) / 2;
+}
+// current Melbourne wall-clock, as decimal hours + a HH:MM string + weekday
+function melbNow() {
+  const d = new Date();
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Australia/Melbourne', hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short' }).formatToParts(d);
+  const get = t => (p.find(x => x.type === t) || {}).value;
+  let hh = +get('hour'); if (hh === 24) hh = 0;          // some engines emit "24" at midnight
+  const mm = +get('minute');
+  return { hour: hh + mm / 60, label: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, wday: get('weekday'), offset: melbOffsetHours(d) };
+}
+// NOAA solar position → { az (0=N,90=E,180=S,270=W), el } in degrees, for the lot, today, at local `hour`
+function sunPosition(hour) {
+  const now = new Date();
+  const tz = melbOffsetHours(now);
+  // day-of-year for today's Melbourne date
+  const mp = new Intl.DateTimeFormat('en-GB', { timeZone: 'Australia/Melbourne', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const gv = t => +(mp.find(x => x.type === t) || {}).value;
+  const Y = gv('year'), Mo = gv('month'), Da = gv('day');
+  const doy = Math.floor((Date.UTC(Y, Mo - 1, Da) - Date.UTC(Y, 0, 0)) / 864e5);
+  const lat = SITE_LL[0] * Math.PI / 180, lon = SITE_LL[1];
+  const g = 2 * Math.PI / 365 * (doy - 1 + (hour - 12) / 24);     // fractional year (rad)
+  const eqt = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g)
+    - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));   // equation of time (min)
+  const decl = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g)
+    - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g)
+    - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);     // declination (rad)
+  const toff = eqt + 4 * lon - 60 * tz;                           // time offset (min)
+  const tst = hour * 60 + toff;                                   // true solar time (min)
+  const ha = (tst / 4 - 180) * Math.PI / 180;                     // hour angle (rad)
+  const cosZ = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(ha);
+  const z = Math.acos(Math.max(-1, Math.min(1, cosZ)));
+  const el = 90 - z * 180 / Math.PI;
+  // azimuth from NORTH, clockwise. Southern hemisphere: noon sun is due NORTH
+  // (az≈0/360), rises NE, sets NW — so shadows fall to the SOUTH.
+  let az = Math.acos(Math.max(-1, Math.min(1, (Math.sin(decl) - Math.sin(lat) * Math.cos(z)) / (Math.cos(lat) * Math.sin(z) + 1e-6)))) * 180 / Math.PI;
+  if (ha > 0) az = 360 - az;                                      // afternoon → west of north
+  return { az, el };
+}
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+function lerpHex(h1, h2, t) {
+  const r = lerp((h1 >> 16) & 255, (h2 >> 16) & 255, t), g = lerp((h1 >> 8) & 255, (h2 >> 8) & 255, t), b = lerp(h1 & 255, h2 & 255, t);
+  return (r << 16) | (g << 8) | b;
+}
 
 const S2W = p => [p[0], -p[1]];
 const HF = HOUSE_FRAME;
@@ -191,6 +248,28 @@ function makeTextures() {
       g.fillStyle = `rgba(${v},${v - 4},${v - 10},.45)`; g.fillRect(Math.random() * w, Math.random() * h, 1.6, 1.6);
     }
   }, 4, 4);
+  // soft round star point (used by the night starfield)
+  TEX.star = canvasTex(32, 32, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.35, 'rgba(255,255,255,.7)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(w / 2, h / 2, w / 2, 0, 7); g.fill();
+  }, 1, 1);
+  // thin WANING CRESCENT — matches the real moon on the night of 2026-06-13
+  // (Melbourne ≈4% illuminated, ~2 days before new moon). Carved from a lit disk.
+  TEX.moon = canvasTex(128, 128, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    const halo = g.createRadialGradient(w / 2, h / 2, 16, w / 2, h / 2, w / 2);
+    halo.addColorStop(0, 'rgba(210,220,240,.28)'); halo.addColorStop(1, 'rgba(210,220,240,0)');
+    g.fillStyle = halo; g.beginPath(); g.arc(w / 2, h / 2, w / 2, 0, 7); g.fill();
+    const disk = g.createRadialGradient(w / 2 - 4, h / 2 - 4, 4, w / 2, h / 2, 34);
+    disk.addColorStop(0, '#fdfdf6'); disk.addColorStop(.85, '#e3e7ee'); disk.addColorStop(1, '#c7cdd8');
+    g.fillStyle = disk; g.beginPath(); g.arc(w / 2, h / 2, 34, 0, 7); g.fill();
+    // carve a near-overlapping dark disk to leave only a slim crescent on the limb
+    g.globalCompositeOperation = 'destination-out';
+    g.beginPath(); g.arc(w / 2 + 13, h / 2 - 2, 33, 0, 7); g.fill();
+    g.globalCompositeOperation = 'source-over';
+  }, 1, 1);
 }
 
 let MAT = {};
@@ -243,6 +322,16 @@ function makeMaterials() {
     carBody2: M({ color: 0xd9dde2, roughness: .35, metalness: .55 }),
     carGlass: M({ color: 0x141d24, roughness: .08, metalness: .6 }),
     tyre: M({ color: 0x14161a, roughness: .9 }),
+    // night fixtures — emissiveIntensity is ramped from 0 (day) up at dusk by setTime()
+    winLit: M({ color: 0x141008, emissive: 0xffd9a0, emissiveIntensity: 0, roughness: .9 }),       // warm room glow
+    winLitCool: M({ color: 0x0c1216, emissive: 0xbfe0ff, emissiveIntensity: 0, roughness: .9 }),    // cool TV/LED glow
+    nbrWin: M({ color: 0x14100a, emissive: 0xffce92, emissiveIntensity: 0, roughness: .9 }),        // neighbour windows
+    lampHead: M({ color: 0x26282b, emissive: 0xffd49a, emissiveIntensity: 0, roughness: .5, metalness: .3 }),
+    lampPole: M({ color: 0x393c40, roughness: .55, metalness: .55 }),
+    hwyLamp: M({ color: 0x26282b, emissive: 0xffe6c0, emissiveIntensity: 0, roughness: .5, metalness: .3 }),
+    headlight: M({ color: 0x202020, emissive: 0xfff4e0, emissiveIntensity: 0, roughness: .4 }),
+    taillight: M({ color: 0x300000, emissive: 0xff2a14, emissiveIntensity: 0, roughness: .4 }),
+    acwall: M({ color: 0x8d8a82, roughness: .92 }),   // Burwood Hwy acoustic (noise) wall
   };
   // automotive 2-coat paint: metallic base + glossy clearcoat that mirrors the sky
   MAT.carPaint = new THREE.MeshPhysicalMaterial({
@@ -304,6 +393,7 @@ function panel(g, x0, x1, y0, y1, T, mat) {
 // (direction-agnostic — full wall depth), a slim aluminium frame, glazing bars,
 // and a projecting sill. The centred glass sits ~T/2 behind each face so the
 // opening reads as a real deep reveal instead of a flat sticker.
+let winN = 0;   // window counter → deterministic pattern of which windows are "on" at night
 function glazing(g, x0, x1, y0, y1, T, sillOut) {
   const w = x1 - x0, h = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
   const box = (bw, bh, bd, x, y, z, m, cast) => {
@@ -317,6 +407,10 @@ function glazing(g, x0, x1, y0, y1, T, sillOut) {
   box(lin, h - lin * 2, T * .94, x1 - lin / 2, cy, 0, MAT.render, false); // right jamb
   // centred (recessed) glass
   box(w - lin * 2 - .02, h - lin * 2 - .02, T * .16, cx, cy, 0, MAT.glass, false);
+  // emissive "room light" panel just behind the glass — dark by day, glows at
+  // night (ramped in setTime). ~2/3 of windows are lit, a few with a cool TV cast.
+  winN++;
+  if (winN % 3 !== 0) box(w - lin * 2 - .05, h - lin * 2 - .05, .02, cx, cy, -.035, winN % 5 === 0 ? MAT.winLitCool : MAT.winLit, false);
   // slim dark frame on the glass plane
   const f = .05;
   box(w - lin * 2, f, T * .34, cx, y1 - lin - f / 2, 0, MAT.frame, false);
@@ -444,6 +538,25 @@ function nbrBuilding(g, b, idx) {
   const roof = new THREE.Mesh(geo, idx % 3 ? MAT.nbrRoof : MAT.nbrRoof2);
   roof.material.side = THREE.DoubleSide;
   roof.castShadow = true; roof.receiveShadow = true; g.add(roof);
+  // warm lit windows on the two longest facades so the house reads after dark
+  // (skip ~1/4 of houses → some stay dark; ramped from 0 in setTime).
+  if (b.type !== 'garage' && idx % 4 !== 1) {
+    const segs = [];
+    for (let i = 0; i < pts.length; i++) { const a = pts[i], q = pts[(i + 1) % pts.length]; segs.push({ a, q, len: Math.hypot(q[0] - a[0], q[1] - a[1]) }); }
+    segs.sort((p, q) => q.len - p.len);
+    segs.slice(0, 2).forEach((s, si) => {
+      const ry = -Math.atan2(s.q[1] - s.a[1], s.q[0] - s.a[0]);
+      const n = s.len > 9 ? 3 : 2;
+      for (let k = 0; k < n; k++) {
+        const t = (k + 1) / (n + 1);
+        const mx = s.a[0] + (s.q[0] - s.a[0]) * t, mz = s.a[1] + (s.q[1] - s.a[1]) * t;
+        const ox = mx - c[0], oz = mz - c[1], ol = Math.hypot(ox, oz) || 1;   // outward from centroid
+        const win = new THREE.Mesh(new THREE.BoxGeometry(.95, .9, .05), MAT.nbrWin);
+        win.position.set(mx + ox / ol * .07, si ? 1.05 : 1.7, mz + oz / ol * .07);
+        win.rotation.y = ry; g.add(win);
+      }
+    });
+  }
 }
 
 function roadRibbon(g, pts, width, mat, y) {
@@ -459,7 +572,8 @@ function roadRibbon(g, pts, width, mat, y) {
 
 function buildSiteCtx() {
   siteCtxG = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.CircleGeometry(130, 48), MAT.grass);
+  // wider ground so Burwood Highway (≈110–170 m SSW) sits on terrain; fog hides the far edge
+  const base = new THREE.Mesh(new THREE.CircleGeometry(180, 56), MAT.grass);
   base.rotation.x = -Math.PI / 2; base.position.y = -.07; base.receiveShadow = true;
   siteCtxG.add(base);
   for (const r of SITE.roads) {
@@ -495,8 +609,17 @@ function buildSiteCtx() {
   [[-19.5, -20], [-21, 14], [-18, 40], [12, -23.5], [38, -20], [-17, 64], [30, 28], [-37, 30], [40, 50]]
     .forEach((t, i) => tree(siteCtxG, ...S2W(t), .9 + (i % 3) * .25));
 
-  // clouds — billboard sprites high above the suburb
-  const cloudMat = new THREE.SpriteMaterial({ map: TEX.cloud, transparent: true, opacity: .8, depthWrite: false });
+  // street lamps along the residential verges (Pimpala Court + Benwerrin Drive
+  // + the court bowl) — on at dusk, lighting the frontage and crossover
+  [[-17.5, -13, 0], [-13.5, 18, 0], [-11.5, 50, 0], [-13.2, 78, 0],
+   [9, -24, 0], [-19, -20, 0], [38, -25.5, 0]].forEach(([sx, sy, r]) => {
+    const p = S2W([sx, sy]); streetLamp(siteCtxG, p[0], p[1], { rot: r });
+  });
+  // the verified arterial to the SSW
+  buildBurwoodHighway(siteCtxG);
+
+  // clouds — billboard sprites high above the suburb (faded out at night by setTime)
+  cloudMat = new THREE.SpriteMaterial({ map: TEX.cloud, transparent: true, opacity: .8, depthWrite: false });
   [[-60, 70, -90, 46], [40, 86, -120, 60], [110, 76, -40, 52], [-120, 92, 30, 64], [70, 82, 90, 56], [-30, 78, 110, 48]]
     .forEach(([x, y, z, s]) => {
       const c = new THREE.Sprite(cloudMat);
@@ -527,6 +650,98 @@ function tree(g, x, z, s) {
     lf.castShadow = true; lf.receiveShadow = true; o.add(lf);
   }
   o.position.set(x, 0, z); g.add(o);
+}
+
+// street / highway lamp: pole + outreach arm + emissive head + a no-shadow
+// PointLight + a warm additive light-pool on the road. All ramped at night by
+// setTime(). `o` = {tall} for taller, whiter highway poles.
+function streetLamp(g, x, z, o = {}) {
+  const grp = new THREE.Group();
+  const ht = o.tall ? 9.2 : 5.4, headM = o.tall ? MAT.hwyLamp : MAT.lampHead;
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.08, .12, ht, 8), MAT.lampPole);
+  pole.position.y = ht / 2; pole.castShadow = true; grp.add(pole);
+  const reach = o.tall ? 2.2 : 1.1;
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(.05, .06, reach, 6), MAT.lampPole);
+  arm.position.set(reach / 2, ht - .1, 0); arm.rotation.z = Math.PI / 2 - .28; grp.add(arm);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(o.tall ? .7 : .5, .16, .3), headM);
+  head.position.set(reach, ht - .35, 0); grp.add(head);
+  const light = new THREE.PointLight(o.tall ? 0xfff0d6 : 0xffd9a0, 0, o.tall ? 26 : 17, 2);
+  light.position.set(reach, ht - .5, 0); grp.add(light);
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(o.tall ? 6.5 : 4.2, 24),
+    new THREE.MeshBasicMaterial({ color: o.tall ? 0xffe7c2 : 0xffd49a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+  pool.rotation.x = -Math.PI / 2; pool.position.set(reach, .03, 0); grp.add(pool);
+  grp.position.set(x, 0, z); if (o.rot) grp.rotation.y = o.rot; g.add(grp);
+  streetLamps.push({ light, pool, head: o.tall });
+}
+
+// Burwood Highway — VERIFIED 110 m SSW of the lot (bearing 202°), running
+// WNW–ESE (~112°), behind the Benwerrin Drive houses. Only a thin strip falls
+// inside the ~130 m scene, hard against the SSW edge. Modelled honestly as the
+// divided arterial it is: carriageways + median, tall lights (on at night,
+// visible over the rooftops), passing cars with head/tail lights, an acoustic
+// wall, and a distance label. The lot does NOT front it (fronts Pimpala Ct).
+function buildBurwoodHighway(g) {
+  // site-frame geometry from the OSM-derived nearest point + centerline bearing
+  const P0 = [-41.5, -102.3];                 // nearest centerline point (E,N metres), 110 m @ 202°
+  const dir = [Math.sin(112 * Math.PI / 180), Math.cos(112 * Math.PI / 180)]; // bearing 112° (E,N)
+  const perp = [-dir[1], dir[0]];             // left-normal (toward the lot, ~N)
+  const at = (t, s = 0) => [P0[0] + dir[0] * t + perp[0] * s, P0[1] + dir[1] * t + perp[1] * s];
+  const T0 = -140, T1 = 140;
+  // two carriageways (each ~7.5 m) either side of a ~3.5 m median
+  for (const s of [-5.5, 5.5]) {
+    const A = S2W(at(T0, s)), Bp = S2W(at(T1, s));
+    const len = Math.hypot(Bp[0] - A[0], Bp[1] - A[1]);
+    const ry = -Math.atan2(Bp[1] - A[1], Bp[0] - A[0]);
+    const cw = new THREE.Mesh(new THREE.BoxGeometry(len, .06, 7.6), MAT.asphalt);
+    cw.position.set((A[0] + Bp[0]) / 2, -.01, (A[1] + Bp[1]) / 2); cw.rotation.y = ry;
+    cw.receiveShadow = true; g.add(cw);
+    // lane dashes + edge line along this carriageway
+    for (let t = T0 + 4; t < T1; t += 8) {
+      const m = S2W(at(t, s)); const dash = new THREE.Mesh(new THREE.BoxGeometry(2.4, .02, .16), MAT.white);
+      dash.position.set(m[0], .03, m[1]); dash.rotation.y = ry; g.add(dash);
+    }
+  }
+  // planted median strip
+  for (let t = T0; t < T1; t += 1.5) {
+    const m = S2W(at(t, 0));
+    const med = new THREE.Mesh(new THREE.BoxGeometry(1.6, .18, 3.4), MAT.kerb);
+    const ry = -Math.atan2(S2W(at(t + 1, 0))[1] - m[1], S2W(at(t + 1, 0))[0] - m[0]);
+    med.position.set(m[0], .06, m[1]); med.rotation.y = ry; g.add(med);
+  }
+  // tall sodium/LED highway lights, staggered both sides (visible over rooftops at night)
+  for (let t = T0 + 12; t < T1; t += 34) {
+    const sideA = at(t, 11.5), sideB = at(t + 17, -11.5);
+    let p = S2W(sideA); streetLamp(g, p[0], p[1], { tall: true, rot: Math.PI });
+    p = S2W(sideB); streetLamp(g, p[0], p[1], { tall: true });
+  }
+  // a handful of cars with head/tail lights (head faces travel direction)
+  const cars = [[-70, -5.5, 1], [-12, -5.5, 1], [44, -5.5, 1], [-44, 5.5, -1], [22, 5.5, -1], [88, 5.5, -1]];
+  cars.forEach(([t, s, fwd], i) => {
+    const c = S2W(at(t, s)); const ry = -Math.atan2(S2W(at(t + fwd, s))[1] - c[1], S2W(at(t + fwd, s))[0] - c[0]);
+    const car = new THREE.Group();
+    B(car, 4.4, 1.0, 1.9, 0, .55, 0, i % 2 ? MAT.carBody2 : MAT.carPaint);
+    B(car, 2.5, .7, 1.8, -.2, 1.25, 0, MAT.carGlass);
+    // headlights (front) + taillights (rear), local +x = travel direction
+    B(car, .12, .22, .34, 2.18, .55, .62, MAT.headlight, false); B(car, .12, .22, .34, 2.18, .55, -.62, MAT.headlight, false);
+    B(car, .1, .2, .3, -2.2, .62, .66, MAT.taillight, false); B(car, .1, .2, .3, -2.2, .62, -.66, MAT.taillight, false);
+    car.position.set(c[0], 0, c[1]); car.rotation.y = ry; g.add(car);
+  });
+  // acoustic (noise) wall on the near side, between the highway and the houses
+  const wa = S2W(at(T0, 13.5)), wb = S2W(at(T1, 13.5));
+  const wl = Math.hypot(wb[0] - wa[0], wb[1] - wa[1]);
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(wl, 2.6, .25), MAT.acwall);
+  wall.position.set((wa[0] + wb[0]) / 2, 1.3, (wa[1] + wb[1]) / 2);
+  wall.rotation.y = -Math.atan2(wb[1] - wa[1], wb[0] - wa[0]); wall.castShadow = true; wall.receiveShadow = true; g.add(wall);
+  // floating label "BURWOOD HWY · ~110 m"
+  const lab = canvasTex(512, 96, (cx, cw, ch) => {
+    cx.clearRect(0, 0, cw, ch);
+    cx.fillStyle = 'rgba(12,16,24,.78)'; cx.fillRect(0, 0, cw, ch);
+    cx.strokeStyle = '#e2a07a'; cx.lineWidth = 3; cx.strokeRect(3, 3, cw - 6, ch - 6);
+    cx.fillStyle = '#f2efe9'; cx.font = '700 44px IBM Plex Mono, monospace';
+    cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText('BURWOOD HWY · ~110 m SSW', cw / 2, ch / 2 + 2);
+  }, 1, 1);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: lab, transparent: true, depthTest: false }));
+  const lp = S2W(at(20, 0)); sp.position.set(lp[0], 13, lp[1]); sp.scale.set(26, 4.9, 1); sp.renderOrder = 5; g.add(sp);
 }
 
 // ============================================================
@@ -1156,12 +1371,15 @@ function initScene() {
   const sr = 52; Object.assign(sun.shadow.camera, { left: -sr, right: sr, top: sr, bottom: -sr, near: 1, far: 200 });
   sun.shadow.bias = -.0004; sun.shadow.radius = fineShadows ? 3 : 1.5;   // soft penumbra
   scene.add(sun); scene.add(sun.target);
-  scene.add(new THREE.AmbientLight(0xffffff, .05));
+  ambient = new THREE.AmbientLight(0xffffff, .05); scene.add(ambient);
 
   makeTextures(); makeMaterials();
+  buildSky();
   buildSiteCtx(); buildLot(); buildExterior(); buildInteriorGround(); buildInteriorUpper();
   scene.add(siteCtxG, lotG, extG, roofG, intGround, intUpper);
-  studioSun();    // default: flattering studio light; the slider engages the true solar path
+  // default to the REAL current Melbourne time — the scene is night when it is night
+  timeHour = melbNow().hour; liveClock = true;
+  setTime(timeHour);
   applyView(); updateCam();
   reshadow();
   setupComposer(heroEl.clientWidth, heroEl.clientHeight, fineShadows);
@@ -1186,15 +1404,121 @@ function initScene() {
   animate();
 }
 
-// Studio light: archviz "cheat" sun from the SE that flatters the street facades.
-// Moving the slider switches to the physically-true Melbourne solar path.
-function studioSun() {
-  // lower, warmer raking light (~27° elevation, SE) — long shadows that reveal
-  // the brick/roof relief, window reveals, garage ribs and eaves (golden hour)
-  sun.position.set(62, 42, 66);
-  sun.intensity = 2.5;
-  sun.color.set(0xffe6c2);
-  hemi.intensity = .34;
+// Dynamic sky: a shader dome (gradient + aerial haze + sun disk/glow) driven by
+// the real sun direction, a Points starfield, and a thin-crescent moon. Uniforms
+// are updated by setTime() so scrubbing the clock is cheap (no texture re-bake).
+function buildSky() {
+  skyMat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
+    uniforms: {
+      uTop: { value: new THREE.Color(0x2766b6) }, uBot: { value: new THREE.Color(0xcfd9d2) },
+      uHaze: { value: new THREE.Color(0xe6ebe8) }, uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uSunCol: { value: new THREE.Color(0xfff0d0) }, uSunI: { value: 1 },
+    },
+    vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: [
+      'varying vec3 vDir; uniform vec3 uTop,uBot,uHaze,uSunDir,uSunCol; uniform float uSunI;',
+      'void main(){',
+      '  vec3 d = normalize(vDir);',
+      '  float h = clamp(d.y, -0.2, 1.0);',
+      '  vec3 col = mix(uBot, uTop, pow(clamp(h,0.0,1.0), 0.62));',          // zenith → horizon
+      '  float haze = exp(-max(h,0.0)*4.5);',                               // aerial perspective at the horizon
+      '  col = mix(col, uHaze, haze*0.55);',
+      '  float sd = max(dot(d, normalize(uSunDir)), 0.0);',
+      '  col += uSunCol * (pow(sd,5.0)*0.45 + pow(sd,320.0)*1.4) * uSunI;', // broad glow + sharp disk
+      '  col = mix(col, col*0.5, smoothstep(0.0,-0.14,d.y));',             // darken below horizon
+      '  gl_FragColor = vec4(col, 1.0);',
+      '}',
+    ].join('\n'),
+  });
+  skyMesh = new THREE.Mesh(new THREE.SphereGeometry(260, 32, 16), skyMat);
+  skyMesh.renderOrder = -10; scene.add(skyMesh);
+  scene.background = null;
+  // starfield (upper hemisphere)
+  const N = 1500, pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const th = Math.random() * 2 * Math.PI, v = Math.random() * 0.92, ph = Math.acos(v), r = 250;
+    pos[i * 3] = r * Math.sin(ph) * Math.cos(th); pos[i * 3 + 1] = r * v; pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+  }
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  stars = new THREE.Points(sg, new THREE.PointsMaterial({ size: 1.5, sizeAttenuation: false, map: TEX.star, transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
+  stars.renderOrder = -9; scene.add(stars);
+  // crescent moon
+  moonSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.moon, transparent: true, opacity: 0, depthWrite: false, depthTest: false }));
+  moonSprite.scale.set(13, 13, 1); moonSprite.renderOrder = -8; moonSprite.visible = false; scene.add(moonSprite);
+}
+
+// Drive the whole scene from a Melbourne hour (0–24): sun/moon direction &
+// colour, sky-dome gradient, hemisphere/ambient/exposure, fog, stars, and every
+// night fixture (street lamps, lit windows, highway lights). Physically-based
+// sun via NOAA; honest to tonight's near-new, mostly-absent moon.
+function setTime(hour) {
+  timeHour = hour;
+  const { az, el } = sunPosition(hour);
+  const elr = el * Math.PI / 180, azr = az * Math.PI / 180, cosE = Math.cos(elr);
+  const dir = new THREE.Vector3(cosE * Math.sin(azr), Math.sin(elr), -cosE * Math.cos(azr));
+  const day = smooth(-1, 9, el);           // full daylight above ~9°
+  const civil = smooth(-7, 1, el);         // sky still lit through civil twilight
+  const night = 1 - civil;
+  const lampF = 1 - smooth(-3, 7, el);     // artificial lights ramp on at dusk
+  const goldF = Math.max(0, el > -3 && el < 13 ? 1 - Math.abs(el - 5) / 9 : 0) * (1 - day * 0.35);
+
+  // ---- key light: sun by day, a faint cool skyglow fill by night ----
+  if (el > -0.5) {
+    sun.position.copy(dir).multiplyScalar(180); sun.target.position.set(0, 0, 0);
+    sun.intensity = 0.25 + day * 2.25;
+    sun.color.setHex(lerpHex(0xffb273, 0xfff4e2, smooth(0, 16, el)));   // warm low → white high
+  } else {
+    const md = new THREE.Vector3(-dir.x, Math.max(0.4, -dir.y), -dir.z).normalize();
+    sun.position.copy(md).multiplyScalar(180); sun.target.position.set(0, 0, 0);
+    sun.intensity = 0.12 * night;                                       // dim urban skyglow, not bright moonlight
+    sun.color.setHex(0xaac2e6);
+  }
+  // ---- fill / floor / exposure ----
+  hemi.color.setHex(lerpHex(0x1c2740, 0xcfe2ff, civil));
+  hemi.groundColor.setHex(lerpHex(0x090b11, 0x6e6a58, civil));
+  hemi.intensity = 0.08 + civil * 0.36;
+  if (ambient) ambient.intensity = 0.02 + night * 0.05;
+  renderer.toneMappingExposure = 1.02 + night * 0.12;
+
+  // ---- sky dome ----
+  skyMat.uniforms.uTop.value.setHex(lerpHex(0x080c18, 0x2766b6, civil));
+  let bot = lerpHex(0x0c1426, 0xd2dbe0, civil);
+  bot = lerpHex(bot, 0xff9a4e, goldF * 0.85);                          // warm sunrise/sunset band
+  skyMat.uniforms.uBot.value.setHex(bot);
+  skyMat.uniforms.uHaze.value.setHex(lerpHex(0x101a30, lerpHex(0xe9ede9, 0xffb066, goldF), civil));
+  skyMat.uniforms.uSunDir.value.copy(dir);
+  skyMat.uniforms.uSunCol.value.setHex(lerpHex(0xff8a3c, 0xfff3d6, smooth(0, 14, el)));
+  skyMat.uniforms.uSunI.value = el > -2 ? 0.5 + day : 0;
+
+  // ---- stars + (honest) crescent moon ----
+  stars.material.opacity = night;
+  const moonUp = hour > 3.9 && hour < 14.0;                            // tonight the moon rises 03:55, sets 13:58
+  if (moonUp && night > 0.02) {
+    const p = (hour - 3.9) / (14.0 - 3.9), maz = lerp(72, 298, p) * Math.PI / 180, mel = Math.sin(p * Math.PI) * 30 * Math.PI / 180;
+    moonSprite.position.set(Math.cos(mel) * Math.sin(maz) * 240, Math.sin(mel) * 240, -Math.cos(mel) * Math.cos(maz) * 240);
+    moonSprite.material.opacity = night; moonSprite.visible = true;
+  } else moonSprite.visible = false;
+
+  // ---- fog matches the horizon ----
+  scene.fog.color.setHex(lerpHex(0x0b1422, 0xc8d6dc, civil));
+
+  // ---- night fixtures ----
+  for (const L of streetLamps) { L.light.intensity = lampF * (L.head ? 9 : 6.5); L.pool.material.opacity = lampF * (L.head ? 0.55 : 0.45); }
+  MAT.lampHead.emissiveIntensity = lampF * 1.5;
+  MAT.hwyLamp.emissiveIntensity = lampF * 1.6;
+  MAT.winLit.emissiveIntensity = lampF * 1.15;
+  MAT.winLitCool.emissiveIntensity = lampF * 0.95;
+  MAT.nbrWin.emissiveIntensity = lampF * 1.05;
+  MAT.headlight.emissiveIntensity = lampF * 2.2;
+  MAT.taillight.emissiveIntensity = lampF * 1.6;
+  if (cloudMat) cloudMat.opacity = 0.8 * day;
+
+  // ---- glass reads dark & less reflective at night (interior glow dominates) ----
+  MAT.glass.color.setHex(lerpHex(0x0a0e12, 0x33454e, civil));
+  MAT.glass.envMapIntensity = lerp(0.25, 2.1, civil);
+  MAT.glass.opacity = lerp(0.96, 0.9, civil);
+
   if (renderer) reshadow();
 }
 // filmic colour grade: gentle contrast S-curve, split-tone (warm shadows /
@@ -1264,18 +1588,8 @@ function renderFrame() {
   else renderer.render(scene, camera);
 }
 
-function setSun(hour) {
-  const t = (hour - 7) / 12;
-  const az = (90 - t * 180) * Math.PI / 180;       // E → N → W (southern hemisphere)
-  const el = Math.sin(t * Math.PI) * 48 * Math.PI / 180 + .06;
-  const R = 95;
-  sun.position.set(R * Math.sin(az) * Math.cos(el), R * Math.sin(el), -R * Math.cos(az) * Math.cos(el));
-  sun.intensity = .8 + Math.sin(t * Math.PI) * 2.1;
-  const warm = Math.pow(Math.abs(t - .5) * 2, 2);
-  sun.color.setHSL(.09 - warm * .045, .55 + warm * .3, .82 - warm * .12);
-  hemi.intensity = .22 + Math.sin(t * Math.PI) * .2;
-  if (renderer) reshadow();
-}
+// kept as a thin alias — the modern engine is setTime()
+function setSun(hour) { setTime(hour); }
 
 function applyView() {
   const ext = view === 'exterior' || view === 'site';
@@ -1291,6 +1605,8 @@ function updateCam() {
     tgt.y + dist * Math.sin(rotX),
     tgt.z + dist * Math.cos(rotY) * Math.cos(rotX));
   camera.lookAt(tgt.x, tgt.y, tgt.z);
+  // keep the sky dome + stars centred on the camera (they sit at "infinity")
+  if (skyMesh) { skyMesh.position.copy(camera.position); stars.position.copy(camera.position); }
   invalidate();
 }
 function setView(v) {
@@ -1340,11 +1656,22 @@ function bindCanvasControls() {
     updateCam();
   }, { passive: false });
 
-  document.getElementById('sunSlider').addEventListener('input', function () {
-    setSun(parseFloat(this.value));
-    document.getElementById('sunLabel').textContent =
-      `${String(Math.floor(this.value)).padStart(2, '0')}:${this.value % 1 ? '30' : '00'}`;
-  });
+  // time-of-day clock: full 24 h, defaults to live Melbourne time, "NOW" re-syncs
+  const slider = document.getElementById('sunSlider');
+  const sunLabel = document.getElementById('sunLabel'), nowBtn = document.getElementById('nowBtn');
+  const fmtHM = h => { const m = Math.round(h * 60); return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
+  const paintClock = () => { if (sunLabel) sunLabel.textContent = fmtHM(timeHour); if (nowBtn) nowBtn.classList.toggle('active', liveClock); };
+  slider.min = 0; slider.max = 24; slider.step = 0.25; slider.value = timeHour;
+  slider.addEventListener('input', function () { liveClock = false; setTime(parseFloat(this.value)); paintClock(); });
+  if (nowBtn) nowBtn.addEventListener('click', () => { liveClock = true; timeHour = melbNow().hour; slider.value = timeHour; setTime(timeHour); paintClock(); });
+  paintClock();
+  // while in live mode, advance with the real Melbourne clock (so "now" stays now)
+  clearInterval(clockTimer);
+  clockTimer = setInterval(() => {
+    if (!liveClock || !heroVisible) return;
+    const h = melbNow().hour; if (Math.abs(h - timeHour) < 0.008) return;
+    timeHour = h; slider.value = timeHour; setTime(timeHour); paintClock();
+  }, 30000);
 }
 
 // HUD buttons: re-bound after every language re-render (buttons are recreated)
