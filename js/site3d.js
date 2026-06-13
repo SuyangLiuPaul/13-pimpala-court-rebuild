@@ -225,12 +225,12 @@ function makeMaterials() {
     leaf3: M({ color: 0x37592a, roughness: 1 }),     // shadowed canopy underside
     solar: M({ color: 0x10141f, roughness: .25, metalness: .55 }),
     steel: M({ color: 0xc4c8cc, roughness: .3, metalness: .6 }),
-    floorG: M({ color: 0xcdbfa3, roughness: .85 }),
-    floorTile: M({ color: 0xd9d4c8, roughness: .6 }),
-    carpet: M({ color: 0xb6aa96, roughness: 1 }),
-    bath: M({ color: 0xc2d8da, roughness: .7 }),
-    intWall: M({ color: 0xe9e4d8, roughness: .95 }),
-    cab: M({ color: 0xf0ece3, roughness: .55 }),
+    floorG: M({ color: 0xb6a583, roughness: .85 }),      // deeper engineered-oak (was washing out)
+    floorTile: M({ color: 0xc1baa9, roughness: .6 }),    // warm grey tile
+    carpet: M({ color: 0xa3957d, roughness: 1 }),        // deeper wool beige
+    bath: M({ color: 0xa3bfc3, roughness: .7 }),         // deeper blue-grey
+    intWall: M({ color: 0xddd4c3, roughness: .96 }),     // warm off-white (was stark)
+    cab: M({ color: 0xece7dc, roughness: .55 }),
     stone: M({ color: 0x2c2d33, roughness: .3, metalness: .2 }),
     wood: M({ color: 0x9a7a52, roughness: .8 }),
     dwood: M({ color: 0x5e4733, roughness: .8 }),
@@ -931,6 +931,28 @@ function curb(g, u0, v0, u1, v1, y) {
     m.rotation.y = -Math.atan2(B[1] - A[1], B[0] - A[0]); m.castShadow = true; m.receiveShadow = true; g.add(m);
   }
 }
+// proper room-divider wall: mid-height so you still see in from the top-down
+// dollhouse angle, with a warm timber top cap + a doorway gap. Casts shadows
+// (breaks up the washed-out floor) and clearly reads as a wall, not a stub.
+const WI = 1.6;
+function rwall(g, a, b, y0, gap) {
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const dir = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+  const ry = -Math.atan2(b[1] - a[1], b[0] - a[0]);
+  const seg = (s0, s1) => {
+    if (s1 - s0 < .06) return;
+    const mid = (s0 + s1) / 2, ln = s1 - s0;
+    const w = new THREE.Mesh(new THREE.BoxGeometry(ln, WI, .1), MAT.intWall);
+    w.position.set(a[0] + dir[0] * mid, y0 + WI / 2, a[1] + dir[1] * mid);
+    w.rotation.y = ry; w.castShadow = true; w.receiveShadow = true; g.add(w);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(ln, .045, .13), MAT.dwood);
+    cap.position.set(a[0] + dir[0] * mid, y0 + WI + .02, a[1] + dir[1] * mid);
+    cap.rotation.y = ry; g.add(cap);
+  };
+  if (!gap) seg(0, len); else { const m = len / 2; seg(0, m - gap / 2); seg(m + gap / 2, len); }
+}
+const rU = (g, u, v0, v1, y, gap) => rwall(g, hw(u, v0), hw(u, v1), y, gap);
+const rV = (g, v, u0, u1, y, gap) => rwall(g, hw(u0, v), hw(u1, v), y, gap);
 
 function buildInteriorGround() {
   intGround = new THREE.Group();
@@ -950,9 +972,22 @@ function buildInteriorGround() {
   room(intGround, 12.6, 2.5, 18.8, 8.6, MAT.conc);     // garage
   room(intGround, 12.4, 8.6, 19, 12.9, MAT.floorTile); // mud/wet kitchen/laundry
   room(intGround, 12.4, 12.9, 19, 16.5, MAT.paver);    // alfresco
-  // perimeter curb only (footprint outline)
+  // perimeter outline (low curb) + proper mid-height room dividers
   curb(intGround, 0, 0, 12.4, 16.7, 0);
   curb(intGround, 12.4, 2.5, 19, 16.5, 0);
+  rU(intGround, 4.2, 0, 5.9, 0, 1.0);       // guest suite | entry
+  rV(intGround, 5.9, .2, 4.2, 0, .9);       // guest | ensuite
+  rU(intGround, 7.4, 0, 7.6, 0, 1.0);       // entry | study
+  rV(intGround, 3.6, 7.4, 12.2, 0, 1.0);    // study | theatre
+  rV(intGround, 7.6, 7.4, 12.4, 0, 1.6);    // theatre | hub (wide opening)
+  rU(intGround, 4.2, 5.9, 11.6, 0, 1.2);    // rumpus/service | gallery
+  rV(intGround, 9.8, .2, 4.2, 0, .9);       // rumpus | powder
+  rV(intGround, 11.6, .2, 7.4, 0, 1.4);     // front rooms | family (open)
+  rU(intGround, 2.0, 9.8, 11.6, 0, .8);     // powder | store
+  rV(intGround, 8.6, 12.6, 18.8, 0, 1.0);   // garage | service
+  rU(intGround, 14.2, 8.6, 12.9, 0, .8);    // mud | wet kitchen
+  rU(intGround, 16.8, 8.6, 12.9, 0, .8);    // wet kitchen | laundry
+  rV(intGround, 12.9, 12.4, 19, 0, 1.8);    // service | alfresco (open)
   stair(intGround, 4.35, 6.6, 0, UY);
   // furniture
   furnish(intGround, 'bed', 2.2, 2.2, 180, 0);
@@ -989,7 +1024,19 @@ function buildInteriorUpper() {
   room(intUpper, 13.0, 12.7, 19, 15.9, MAT.carpet, UY - .02);// bed 6
   curb(intUpper, .8, 0, 12.4, 16.7, UY);
   curb(intUpper, 12.4, 2.5, 19, 15.9, UY);
-  // void opening (over the stair/foyer) — leave open, just an edge rail
+  // mid-height room dividers (bedrooms / baths / suites read as real rooms)
+  rV(intUpper, 4.4, .8, 5.0, UY, .9);       // bed 3 | landing
+  rU(intUpper, 8.6, .2, 7.0, UY, 1.0);      // landing | bed 4 / bath
+  rV(intUpper, 4.2, 8.6, 12.2, UY, .9);     // bed 4 | bath
+  rV(intUpper, 7.0, 8.6, 12.2, UY, .9);     // bath | gym
+  rU(intUpper, 5.2, .8, 11.8, UY, 1.0);     // west rooms | landing
+  rV(intUpper, 7.0, .8, 5.2, UY, 1.1);      // bed 3 | retreat
+  rV(intUpper, 11.8, .8, 5.4, UY, 1.1);     // retreat | master
+  rU(intUpper, 8.4, 13.2, 16.5, UY, .8);    // master | WIR/ensuite
+  rV(intUpper, 6.4, 12.4, 19, UY, 1.0);     // bed 2 | hall
+  rU(intUpper, 14.8, 6.4, 9.1, UY, .8);     // ens 2 | hall
+  rV(intUpper, 9.1, 12.4, 19, UY, 1.2);     // hall | media lounge
+  rV(intUpper, 12.7, 12.4, 19, UY, .9);     // media | bed 6
   stair(intUpper, 4.35, 6.6, 0, UY);
   furnish(intUpper, 'bed', 3.0, 14.6, 0, UY, { master: true });
   furnish(intUpper, 'wr', 7.1, 15.9, 0, UY, { len: 2.4 });
