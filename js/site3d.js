@@ -1553,6 +1553,62 @@ function buildSky() {
   moonSprite.scale.set(13, 13, 1); moonSprite.renderOrder = -8; moonSprite.visible = false; scene.add(moonSprite);
 }
 
+// ---- time-of-day image-based lighting ----------------------------------
+// The PMREM environment (what glass / Colorbond steel / car paint mirror) was
+// frozen at the load-time sky, so at sunset/night the windows still reflected a
+// midday sky. Rebuild it from the CURRENT sky-dome colours so reflections track
+// the day/night cycle: paint a fresh equirect from skyMat's live uniforms, then
+// PMREM it. Debounced (one rebuild when the clock settles) and the old target is
+// disposed each time, so scrubbing the slider stays cheap and leak-free.
+let envCanvas, envCtx, envTex, envPmrem, envRT = null, envTimer = 0;
+const cssOf = c => 'rgb(' + (c.r * 255 | 0) + ',' + (c.g * 255 | 0) + ',' + (c.b * 255 | 0) + ')';
+const rgbaOf = (c, a) => 'rgba(' + (c.r * 255 | 0) + ',' + (c.g * 255 | 0) + ',' + (c.b * 255 | 0) + ',' + a + ')';
+function paintEnvSky(g, w, h) {
+  const U = skyMat.uniforms, top = U.uTop.value, haze = U.uHaze.value, bot = U.uBot.value;
+  const sunCol = U.uSunCol.value, sunI = U.uSunI.value, dir = U.uSunDir.value;
+  const mid = top.clone().lerp(haze, 0.5), ground = haze.clone().multiplyScalar(0.32);
+  const lin = g.createLinearGradient(0, 0, 0, h);            // zenith (top) → horizon (mid) → ground bounce (bottom)
+  lin.addColorStop(0.00, cssOf(top));
+  lin.addColorStop(0.36, cssOf(mid));
+  lin.addColorStop(0.49, cssOf(haze));
+  lin.addColorStop(0.50, cssOf(bot));                        // warm sunrise/sunset band sits at the horizon
+  lin.addColorStop(0.60, cssOf(bot.clone().lerp(ground, 0.6)));
+  lin.addColorStop(1.00, cssOf(ground));
+  g.fillStyle = lin; g.fillRect(0, 0, w, h);
+  // soft directional sun glow placed by the sun's equirect UV (matches the dome)
+  if (sunI > 0.02 && dir.y > -0.05) {
+    const u = Math.atan2(dir.z, dir.x) / (2 * Math.PI) + 0.5;
+    const v = Math.asin(Math.max(-1, Math.min(1, dir.y))) / Math.PI + 0.5;
+    const sx = u * w, sy = (1 - v) * h, R = w * 0.17, A = Math.min(1, 0.9 * sunI);
+    for (const cx of [sx, sx + w, sx - w]) {                 // duplicate across the u=0/1 seam
+      if (cx < -R || cx > w + R) continue;
+      const rg = g.createRadialGradient(cx, sy, 2, cx, sy, R);
+      rg.addColorStop(0, rgbaOf(sunCol, A));
+      rg.addColorStop(0.32, rgbaOf(sunCol, 0.4 * sunI));
+      rg.addColorStop(1, rgbaOf(sunCol, 0));
+      g.fillStyle = rg; g.fillRect(0, 0, w, h);
+    }
+  }
+}
+function updateEnvIBL() {
+  if (!renderer || !skyMat) return;
+  if (!envCanvas) {
+    envCanvas = document.createElement('canvas'); envCanvas.width = 512; envCanvas.height = 256;
+    envCtx = envCanvas.getContext('2d');
+    envTex = new THREE.CanvasTexture(envCanvas); envTex.mapping = THREE.EquirectangularReflectionMapping;
+    envPmrem = new THREE.PMREMGenerator(renderer); envPmrem.compileEquirectangularShader();
+  }
+  try {
+    paintEnvSky(envCtx, envCanvas.width, envCanvas.height); envTex.needsUpdate = true;
+    const rt = envPmrem.fromEquirectangular(envTex);
+    scene.environment = rt.texture;
+    if (envRT) envRT.dispose();
+    envRT = rt;
+    invalidate();
+  } catch (e) { /* keep the previous environment on any failure */ }
+}
+function scheduleEnvIBL() { clearTimeout(envTimer); envTimer = setTimeout(updateEnvIBL, 160); }
+
 // Drive the whole scene from a Melbourne hour (0–24): sun/moon direction &
 // colour, sky-dome gradient, hemisphere/ambient/exposure, fog, stars, and every
 // night fixture (street lamps, lit windows, highway lights). Physically-based
@@ -1624,6 +1680,8 @@ function setTime(hour) {
   MAT.glass.envMapIntensity = lerp(0.25, 1.3, civil);
   MAT.glass.opacity = lerp(0.95, 0.88, civil);
 
+  // refresh the reflection environment to match the new sky (debounced)
+  scheduleEnvIBL();
   if (renderer) reshadow();
 }
 // filmic colour grade: gentle contrast S-curve, split-tone (warm shadows /
