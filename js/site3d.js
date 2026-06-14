@@ -342,6 +342,11 @@ function makeMaterials() {
     nbr2: M({ color: 0xc9c2b4, roughness: .95 }),
     nbrRoof: M({ color: 0x4a463f, roughness: .9 }),
     nbrRoof2: M({ color: 0x5d5046, roughness: .9 }),
+    // varied project-home palettes (brick / render tones + terracotta/charcoal/grey
+    // roofs) so the surrounding street reads as many different houses instead of one
+    // flat grey box stamped repeatedly. Subtle render-tooth texture on the walls.
+    nbrWalls: [0xb7afa1, 0xd0c9bb, 0x9c968b, 0xc9bba6, 0xacb1b3, 0xdad5ca, 0x8f8a82].map(c => M({ map: TEX.render, color: c, roughness: .95 })),
+    nbrRoofs: [0x46423b, 0x5d5046, 0x7c4838, 0x676b6e, 0x3b3a38, 0x6e5a48].map(c => M({ color: c, roughness: .9 })),
     kerb: M({ color: 0x8e8a82, roughness: .9 }),
     trunk: M({ color: 0x5d4530, roughness: .95 }),
     leaf: M({ color: 0x4d7a3a, roughness: 1 }),
@@ -563,11 +568,51 @@ function hipRoof(g, u0, v0, u1, v1, yEave, pitchDeg, eave, opts = {}) {
 // ============================================================
 // street context — real surveyed buildings
 // ============================================================
+// our lot outline in world coords — used to hold neighbours off our fences
+const LOTW = SITE.lot.slice(0, -1).map(p => [p[0], -p[1]]);
+// nearest point on our lot boundary to a world point → distance + outward unit normal
+function lotEdge(px, pz) {
+  let best = 1e9, bx = 0, bz = 0;
+  for (let i = 0, j = LOTW.length - 1; i < LOTW.length; j = i++) {
+    const ax = LOTW[j][0], az = LOTW[j][1], dx = LOTW[i][0] - ax, dz = LOTW[i][1] - az;
+    const L = dx * dx + dz * dz || 1;
+    let t = ((px - ax) * dx + (pz - az) * dz) / L; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const ox = px - (ax + t * dx), oz = pz - (az + t * dz), d = Math.hypot(ox, oz);
+    if (d < best) { best = d; bx = ox; bz = oz; }
+  }
+  const l = Math.hypot(bx, bz) || 1;
+  return { dist: best, nx: bx / l, nz: bz / l };
+}
+
 function nbrBuilding(g, b, idx) {
   const pts = b.ring.slice(0, -1).map(p => [p[0], -p[1]]);
   const c = [b.c[0], -b.c[1]];
-  const h = b.type === 'garage' ? 2.55 : 2.9;
-  flatPoly(g, pts, 0, h, idx % 2 ? MAT.nbr : MAT.nbr2, .1).castShadow = true;
+  // Real houses sit back from boundaries. Our OSM footprints sometimes land within
+  // ~1 m of our line, so a 4.7 m-tall box loomed through our 1.95 m paling fence
+  // ("穿模"). Slide any too-close footprint straight out along the boundary normal
+  // until its nearest corner clears a believable side setback.
+  const SETBACK = 3.2;
+  let gMin = 1e9, gx = 0, gz = 0;
+  for (const p of pts) { const e = lotEdge(p[0], p[1]); if (e.dist < gMin) { gMin = e.dist; gx = e.nx; gz = e.nz; } }
+  if (gMin < SETBACK) {
+    const push = SETBACK - gMin;
+    for (const p of pts) { p[0] += gx * push; p[1] += gz * push; }
+    c[0] += gx * push; c[1] += gz * push;
+  }
+  // slight per-house height variation so the rooflines aren't a uniform row of boxes
+  const h = (b.type === 'garage' ? 2.55 : 2.9) + ((idx * 17) % 5 - 2) * 0.11;
+  // varied wall + roof material per house (deterministic by index)
+  const wallMat = MAT.nbrWalls[idx % MAT.nbrWalls.length];
+  const roofMat = b.type === 'garage' ? MAT.nbrRoof : MAT.nbrRoofs[(idx * 5 + 2) % MAT.nbrRoofs.length];
+  flatPoly(g, pts, 0, h, wallMat, .1).castShadow = true;
+  // dark eave/gutter line where the wall meets the roof — stops the boxes reading
+  // as flat cardboard cut-outs and grounds the hipped roof above
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], q = pts[(i + 1) % pts.length], len = Math.hypot(q[0] - a[0], q[1] - a[1]);
+    const eaveBox = new THREE.Mesh(new THREE.BoxGeometry(len + .14, .15, .14), MAT.nbrRoof);
+    eaveBox.position.set((a[0] + q[0]) / 2, h - .02, (a[1] + q[1]) / 2);
+    eaveBox.rotation.y = -Math.atan2(q[1] - a[1], q[0] - a[0]); eaveBox.castShadow = true; g.add(eaveBox);
+  }
   // hipped roof: outer eave ring (6% overhang) → inner ring at +rise
   const outer = pts.map(p => [c[0] + (p[0] - c[0]) * 1.07, c[1] + (p[1] - c[1]) * 1.07]);
   const inner = pts.map(p => [c[0] + (p[0] - c[0]) * 0.42, c[1] + (p[1] - c[1]) * 0.42]);
@@ -584,7 +629,7 @@ function nbrBuilding(g, b, idx) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(V, 3));
   geo.computeVertexNormals();
-  const roof = new THREE.Mesh(geo, idx % 3 ? MAT.nbrRoof : MAT.nbrRoof2);
+  const roof = new THREE.Mesh(geo, roofMat);
   roof.material.side = THREE.DoubleSide;
   roof.castShadow = true; roof.receiveShadow = true; g.add(roof);
   // warm lit windows on the two longest facades so the house reads after dark
@@ -1014,6 +1059,11 @@ function buildExterior() {
   wallRun(upG, hw(12.4, 16.7), hw(0.8, 16.7), UH, .2, MAT.render, [
     { at: 2.7, w: 2.2, type: 'window', sill: .8 }, { at: 7.2, w: 1.4, type: 'window', sill: 1.2, head: 2.0 }, { at: 10.6, w: 1.4, type: 'window' }], UY);
   wallRun(upG, hw(12.4, 15.9), hw(12.4, 16.7), UH, .2, MAT.render, [], UY);
+  // south-east return of the upper east wing where the two wings step (v 0→2.5).
+  // The ground floor closes this with brick (see east-wing/west-wing junction);
+  // the upper floor was left open → you could see into the hollow shell at the
+  // corner ("穿墙"). Close it with a rendered return wall + one window.
+  wallRun(upG, hw(12.4, 0), hw(12.4, 2.5), UH, .2, MAT.render, [{ at: 1.25, w: 1.1, type: 'window', sill: .9 }], UY);
   wallRun(upG, hw(12.4, 2.5), hw(19, 2.5), UH, .2, MAT.render, [{ at: 3.4, w: 2.2, type: 'window', sill: .9 }], UY);
   wallRun(upG, hw(19, 2.5), hw(19, 15.9), UH, .2, MAT.render, [
     { at: 3.3, w: 1.6, type: 'window' }, { at: 8.4, w: 2.0, type: 'window', sill: .9 }, { at: 12.0, w: 1.6, type: 'window' }], UY);
