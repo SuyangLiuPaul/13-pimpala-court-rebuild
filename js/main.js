@@ -35,6 +35,20 @@ function renderAll() {
     `<button class="hbtn" id="rotBtn">${L.hero.rotate}</button>` +
     `<button class="hbtn zoom" id="zoomIn" aria-label="zoom in">＋</button>` +
     `<button class="hbtn zoom" id="zoomOut" aria-label="zoom out">－</button>`;
+  // interactive action row (weather cycle · garage · open up · lights) — rebuilt
+  // each render so labels follow the language; live state read from site3d globals
+  const A = L.hero.actions;
+  if (A) {
+    const wm = (typeof weatherMode !== 'undefined') ? weatherMode : 0;
+    const go = (typeof garageOpen !== 'undefined') && garageOpen;
+    const ho = (typeof housesOpen !== 'undefined') && housesOpen;
+    const lo = (typeof lightsOverride !== 'undefined') && lightsOverride;
+    $('#actBtns').innerHTML =
+      `<button class="hbtn wx ${['wx-clear', 'wx-cloud', 'wx-rain'][wm]}" id="weatherBtn">${['☀ ' + A.wxClear, '☁ ' + A.wxCloud, '🌧 ' + A.wxRain][wm]}</button>` +
+      `<button class="hbtn" id="garageBtn"><span class="lbl">${go ? A.garageClose : A.garageOpen}</span></button>` +
+      `<button class="hbtn" id="openBtn"><span class="lbl">${ho ? A.closeUp : A.openUp}</span></button>` +
+      `<button class="hbtn" id="lightsBtn"><span class="lbl">${lo ? A.lightsOff : A.lightsOn}</span></button>`;
+  }
   $('#sunTag').textContent = L.hero.sun;
   if (L.hero.now) $('#nowBtn').textContent = L.hero.now;
   $('#sunNote').textContent = L.hero.sunNote;
@@ -156,6 +170,9 @@ function renderAll() {
     document.querySelectorAll('[data-view3d]').forEach(x => x.classList.toggle('active', x.dataset.view3d === view));
     $('#roofBtn').textContent = roofOn ? L.hero.roofHide : L.hero.roofShow;
     $('#rotBtn').classList.toggle('active', autoRot);
+    if ($('#garageBtn')) $('#garageBtn').classList.toggle('active', garageOpen);
+    if ($('#openBtn')) $('#openBtn').classList.toggle('active', housesOpen);
+    if ($('#lightsBtn')) $('#lightsBtn').classList.toggle('active', lightsOverride);
   }
   hookReveal();
 }

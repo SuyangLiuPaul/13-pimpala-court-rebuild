@@ -73,6 +73,12 @@ body { background: var(--bg); color: var(--ink); font-family: var(--sans); line-
 .hbtn.now { font-size: .6rem; padding: 6px 11px; line-height: 1; }
 .hbtn.now.active { background: var(--accent2); border-color: var(--accent2); color: #fff; }
 .hbtn.now.active::before { content: '● '; color: #6ee787; }
+/* weather cycle button — tint the border/colour per state */
+.hbtn.wx { min-width: 64px; }
+.hbtn.wx.wx-clear { border-color: var(--gold); color: var(--gold); }
+.hbtn.wx.wx-cloud { border-color: var(--muted); color: var(--ink); }
+.hbtn.wx.wx-rain { border-color: var(--blue); color: var(--blue); background: rgba(159,196,214,.12); }
+#lightsBtn.active::before { content: '● '; color: #6ee787; }
 #statbar {
   position: absolute; z-index: 10; left: 28px; bottom: calc(20px + env(safe-area-inset-bottom, 0px));
   display: flex; gap: 24px;

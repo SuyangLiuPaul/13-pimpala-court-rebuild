@@ -7,6 +7,7 @@
 let scene, camera, renderer, sun, hemi, ambient, composer, fxaaPass, ssaoPass, bokehPass;
 let extG, roofG, siteCtxG, lotG, intGround, intUpper;
 let skyMesh, skyMat, stars, moonSprite, cloudMat;
+let cloudSprites = [], cloudGroup;       // drifting cloud billboards (weather)
 let view = 'exterior', autoRot = false, roofOn = true;
 let rotY = -0.7, rotX = 0.27, dist = 46, tgt = { x: 0, y: 2.8, z: -2 };
 let needsRender = true, heroVisible = true;
@@ -16,6 +17,24 @@ let timeHour = 14.5, liveClock = true, clockTimer = 0;
 const litWindows = [], nbrWindows = [], streetLamps = [];
 const invalidate = () => { needsRender = true; };
 const reshadow = () => { renderer.shadowMap.needsUpdate = true; needsRender = true; };
+
+// ---- interactive layer: animation registry + state ----
+// tween registry drives door/garage/window motion; flags keep the on-demand loop
+// rendering continuously only while something is actually moving / raining.
+const tweens = [];                       // {t, dur, set(e), onDone?}
+const ANIM = { garage: [], stacker: [], window: [], door: [] };   // animatable opening refs, captured at build
+let rainActive = false, cloudsDrift = false, weatherMode = 0;      // weatherMode: 0 Clear · 1 Cloudy · 2 Rain
+let garageOpen = false, housesOpen = false, lightsOverride = false;
+function anyActive() { return rainActive || cloudsDrift || tweens.length > 0 || autoRot; }
+function addTween(dur, set, onDone) { tweens.push({ t: 0, dur, set, onDone }); invalidate(); }
+function stepTweens(dt) {
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    const tw = tweens[i];
+    tw.t = Math.min(1, tw.t + dt / tw.dur);
+    tw.set(tw.t * tw.t * (3 - 2 * tw.t));        // smoothstep
+    if (tw.t >= 1) { tweens.splice(i, 1); tw.onDone && tw.onDone(); }
+  }
+}
 
 // ---------- real Melbourne time + sun position ----------
 const SITE_LL = SITE.meta.originLatLon;   // [lat, lon] of the lot
@@ -489,25 +508,51 @@ function wallRun(group, a, b, H, T, mat, openings, yBase = 0) {
     const head = Math.min(H, s.o.head ?? (t === 'garage' ? 2.45 : 2.18));
     if (sill > .004) panel(g, s.x0, s.x1, 0, sill, T, mat);
     if (head < H - .004) panel(g, s.x0, s.x1, head, H, T, mat);
-    if (t === 'window') glazing(g, s.x0, s.x1, sill, head, T, true);
-    if (t === 'door') { const d = new THREE.Mesh(new THREE.BoxGeometry(s.x1 - s.x0 - .08, head - .06, T * .5), s.o.glass ? MAT.glass : MAT.door); d.position.set((s.x0 + s.x1) / 2, head / 2, 0); d.castShadow = true; g.add(d); }
-    if (t === 'stacker') glazing(g, s.x0, s.x1, .04, head, T, false);
+    if (t === 'window') {
+      glazing(g, s.x0, s.x1, sill, head, T, true);
+      if (s.o.openable) {                                                // awning sash that tilts out (hinged at head)
+        const sash = new THREE.Group(); sash.position.set((s.x0 + s.x1) / 2, head - .06, T * .12);
+        const ph = head - sill - .16;
+        const pane = new THREE.Mesh(new THREE.BoxGeometry(s.x1 - s.x0 - .16, ph, T * .05), MAT.glass);
+        pane.position.set(0, -ph / 2, 0); pane.castShadow = true; sash.add(pane); g.add(sash);
+        ANIM.window.push({ grp: sash, closedRot: 0, openRot: -0.55 });
+      }
+    }
+    if (t === 'door') {
+      if (s.o.swing) {                                                   // entry door swings on a jamb hinge
+        const back = new THREE.Mesh(new THREE.BoxGeometry(s.x1 - s.x0 + .06, head, T * .3), MAT.screen);
+        back.position.set((s.x0 + s.x1) / 2, head / 2, -T * .3); g.add(back);   // dark interior — no see-through when open
+        const hinge = new THREE.Group(); hinge.position.set(s.x0 + .05, 0, 0);
+        const d = new THREE.Mesh(new THREE.BoxGeometry(s.x1 - s.x0 - .08, head - .06, T * .5), s.o.glass ? MAT.glass : MAT.door);
+        d.position.set((s.x1 - s.x0) / 2 - .05, head / 2, 0); d.castShadow = true; hinge.add(d); g.add(hinge);
+        ANIM.door.push({ grp: hinge, closedRot: 0, openRot: -1.35 });
+      } else {
+        const d = new THREE.Mesh(new THREE.BoxGeometry(s.x1 - s.x0 - .08, head - .06, T * .5), s.o.glass ? MAT.glass : MAT.door);
+        d.position.set((s.x0 + s.x1) / 2, head / 2, 0); d.castShadow = true; g.add(d);
+      }
+    }
+    if (t === 'stacker') {
+      glazing(g, s.x0, s.x1, .04, head, T, false);
+      if (s.o.openable) {                                                // one sliding leaf in front of the fixed glazing
+        const leaf = new THREE.Mesh(new THREE.BoxGeometry((s.x1 - s.x0) * .46, head - .12, T * .12), MAT.glass);
+        leaf.position.set((s.x0 + s.x1) / 2 - (s.x1 - s.x0) * .12, (head + .04) / 2, T * .06); leaf.castShadow = true; g.add(leaf);
+        ANIM.stacker.push({ grp: leaf, closedX: leaf.position.x, openX: leaf.position.x + (s.x1 - s.x0) * .42 });
+      }
+    }
     if (t === 'garage') {
       const gw = s.x1 - s.x0 - .12, gh = head - .08, gcx = (s.x0 + s.x1) / 2, rows = 5, rh = gh / rows;
-      const d = new THREE.Mesh(new THREE.BoxGeometry(gw, gh, T * .42), MAT.garage);
-      d.position.set(gcx, gh / 2 + .04, 0); d.castShadow = true; g.add(d);
-      for (let i = 1; i < rows; i++) {                                   // recessed section grooves
-        const gr = new THREE.Mesh(new THREE.BoxGeometry(gw, .03, T * .5), MAT.fascia);
-        gr.position.set(gcx, .04 + i * rh, T * .03); g.add(gr);
-      }
-      for (let i = 0; i < rows - 1; i++) {                               // raised panel ribs
-        const rib = new THREE.Mesh(new THREE.BoxGeometry(gw * .9, rh * .5, T * .05), MAT.garage);
-        rib.position.set(gcx, .04 + i * rh + rh / 2, T * .22); g.add(rib);
-      }
-      for (let k = 0; k < 4; k++) {                                      // top row of lites
-        const win = new THREE.Mesh(new THREE.BoxGeometry(gw / 5.5, rh * .5, T * .22), MAT.glass);
-        win.position.set(gcx - gw * .3 + k * gw * .2, .04 + (rows - .5) * rh, T * .12); g.add(win);
-      }
+      const back = new THREE.Mesh(new THREE.BoxGeometry(gw + .12, gh, T * .3), MAT.screen);
+      back.position.set(gcx, gh / 2 + .04, -T * .34); g.add(back);                // dark garage interior behind the door
+      // door panel + grooves/ribs/lites in a head-anchored group → rolls UP into
+      // the lintel via scale.y (no clip into the storey above, no see-through)
+      const doorG = new THREE.Group(); doorG.position.set(gcx, head - .04, 0);
+      const d = new THREE.Mesh(new THREE.BoxGeometry(gw, gh, T * .42), MAT.garage); d.position.set(0, -gh / 2, 0); doorG.add(d);
+      for (let i = 1; i < rows; i++) { const gr = new THREE.Mesh(new THREE.BoxGeometry(gw, .03, T * .5), MAT.fascia); gr.position.set(0, i * rh - gh, T * .03); doorG.add(gr); }
+      for (let i = 0; i < rows - 1; i++) { const rib = new THREE.Mesh(new THREE.BoxGeometry(gw * .9, rh * .5, T * .05), MAT.garage); rib.position.set(0, i * rh + rh / 2 - gh, T * .22); doorG.add(rib); }
+      for (let k = 0; k < 4; k++) { const win = new THREE.Mesh(new THREE.BoxGeometry(gw / 5.5, rh * .5, T * .22), MAT.glass); win.position.set(-gw * .3 + k * gw * .2, -rh * .5, T * .12); doorG.add(win); }
+      doorG.traverse(m => { if (m.isMesh) m.castShadow = true; });
+      g.add(doorG);
+      ANIM.garage.push({ grp: doorG, closedS: 1, openS: 0.04 });
     }
     prev = s.x1;
   }
@@ -712,14 +757,17 @@ function buildSiteCtx() {
   // the verified arterial to the SSW
   buildBurwoodHighway(siteCtxG);
 
-  // clouds — billboard sprites high above the suburb (faded out at night by setTime)
-  cloudMat = new THREE.SpriteMaterial({ map: TEX.cloud, transparent: true, opacity: .8, depthWrite: false });
-  [[-60, 70, -90, 46], [40, 86, -120, 60], [110, 76, -40, 52], [-120, 92, 30, 64], [70, 82, 90, 56], [-30, 78, 110, 48]]
-    .forEach(([x, y, z, s]) => {
-      const c = new THREE.Sprite(cloudMat);
-      c.position.set(x, y, z); c.scale.set(s, s * .42, 1);
-      siteCtxG.add(c);
-    });
+  // clouds — billboard sprites high above the suburb (faded out at night by
+  // setTime; drift + multiply under the weather modes). Mobile gets fewer.
+  cloudMat = new THREE.SpriteMaterial({ map: TEX.cloud, transparent: true, opacity: .8, depthWrite: false, fog: false });
+  cloudGroup = new THREE.Group(); cloudGroup.renderOrder = -7; siteCtxG.add(cloudGroup);
+  const cloudLayout = [[-60, 70, -90, 46], [40, 86, -120, 60], [110, 76, -40, 52], [-120, 92, 30, 64], [70, 82, 90, 56], [-30, 78, 110, 48]];
+  (isMobileWX ? cloudLayout.slice(0, 3) : cloudLayout).forEach(([x, y, z, s]) => {
+    const c = new THREE.Sprite(cloudMat);
+    c.position.set(x, y, z); c.scale.set(s, s * .42, 1);
+    c.userData.x0 = x; c.userData.span = 280;
+    cloudSprites.push(c); cloudGroup.add(c);
+  });
 }
 function tree(g, x, z, s) {
   const o = new THREE.Group();
@@ -1026,21 +1074,21 @@ function buildExterior() {
 
   // ---- EAST WING ground (brick) ----
   wallRun(extG, hw(0, 0), hw(4.2, 0), GH, .24, MAT.brick, [{ at: 2.1, w: 1.9, type: 'window', sill: .9 }]);
-  wallRun(extG, hw(4.2, 2.3), hw(7.4, 2.3), GH, .24, MAT.brick, [{ at: 1.6, w: 1.5, type: 'door' }]);
+  wallRun(extG, hw(4.2, 2.3), hw(7.4, 2.3), GH, .24, MAT.brick, [{ at: 1.6, w: 1.5, type: 'door', swing: true }]);
   wallRun(extG, hw(4.2, 0), hw(4.2, 2.3), GH, .24, MAT.brick, []);
   wallRun(extG, hw(7.4, 0), hw(7.4, 2.3), GH, .24, MAT.brick, []);
-  wallRun(extG, hw(7.4, 0), hw(12.4, 0), GH, .24, MAT.brick, [{ at: 2.5, w: 2.4, type: 'window', sill: .75 }]);
+  wallRun(extG, hw(7.4, 0), hw(12.4, 0), GH, .24, MAT.brick, [{ at: 2.5, w: 2.4, type: 'window', sill: .75, openable: true }]);
   wallRun(extG, hw(0, 0), hw(0, 16.7), GH, .24, MAT.brick, [
     { at: 2.1, w: 1.8, type: 'window' }, { at: 7.8, w: 1.8, type: 'window' }, { at: 14.0, w: 2.4, type: 'window', sill: .65 }]);
   wallRun(extG, hw(12.4, 16.7), hw(0, 16.7), GH, .24, MAT.brick, [
-    { at: 8.4, w: 4.4, type: 'stacker', head: 2.4 }, { at: 1.9, w: 2.0, type: 'window', sill: 1.0 }]);
+    { at: 8.4, w: 4.4, type: 'stacker', head: 2.4, openable: true }, { at: 1.9, w: 2.0, type: 'window', sill: 1.0 }]);
   wallRun(extG, hw(12.4, 0), hw(12.4, 2.5), GH, .24, MAT.brick, []);
 
   // ---- WEST WING ground ----
   wallRun(extG, hw(12.6, 2.5), hw(18.8, 2.5), GH, .24, MAT.brick, [{ at: 3.1, w: 5.0, type: 'garage', head: 2.4 }]);
   wallRun(extG, hw(19, 2.5), hw(19, 12.9), GH, .24, MAT.brick, [
     { at: 7.4, w: 1.2, type: 'window', sill: 1.4, head: 2.0 }, { at: 9.4, w: 1.0, type: 'door' }]);
-  wallRun(extG, hw(19, 12.9), hw(12.4, 12.9), GH, .24, MAT.brick, [{ at: 3.3, w: 2.4, type: 'stacker', head: 2.3 }]);
+  wallRun(extG, hw(19, 12.9), hw(12.4, 12.9), GH, .24, MAT.brick, [{ at: 3.3, w: 2.4, type: 'stacker', head: 2.3, openable: true }]);
   // alfresco posts under the upper-floor edge (open east + north)
   [[12.8, 16.2], [18.7, 16.2]].forEach(([u, v]) => {
     const p = hw(u, v);
@@ -1053,7 +1101,7 @@ function buildExterior() {
   // ---- UPPER (render) — now spans the full west wing too (bed 6 + media) ----
   const upG = new THREE.Group();
   wallRun(upG, hw(0.8, 0), hw(12.4, 0), UH, .2, MAT.render, [
-    { at: 2.2, w: 2.0, type: 'window', sill: .9 }, { at: 8.8, w: 2.0, type: 'window', sill: .9 }], UY);
+    { at: 2.2, w: 2.0, type: 'window', sill: .9, openable: true }, { at: 8.8, w: 2.0, type: 'window', sill: .9, openable: true }], UY);
   wallRun(upG, hw(0.8, 0), hw(0.8, 16.7), UH, .2, MAT.render, [
     { at: 2.2, w: 1.8, type: 'window' }, { at: 9.8, w: 1.8, type: 'window' }, { at: 14.4, w: 2.0, type: 'window', sill: .8 }], UY);
   wallRun(upG, hw(12.4, 16.7), hw(0.8, 16.7), UH, .2, MAT.render, [
@@ -1609,6 +1657,133 @@ function updateEnvIBL() {
 }
 function scheduleEnvIBL() { clearTimeout(envTimer); envTimer = setTimeout(updateEnvIBL, 160); }
 
+// ============================================================
+// WEATHER — Clear · Cloudy · Rain (drifting clouds, overcast sky/light,
+// falling rain + wet reflective ground). Layered on top of setTime()/IBL and
+// fully reversible; the rain rig + wet-material lerps fall back to the exact dry
+// scene + on-demand rendering when you return to Clear.
+// ============================================================
+const isMobileWX = !matchMedia('(pointer: fine)').matches;   // mirrors fineShadows (mobile = lighter)
+const WX = { wet: 0, target: 0, dryCache: null, rig: null, geo: null, segPos: null,
+  base: null, vel: null, count: 0, BOX: 34, TOP: 26, prevDPR: null, enabled: true };
+const CLOUD_DRIFT = 0.5;                  // world units/sec
+function setCloudDrift(on) { cloudsDrift = on; _lastT = 0; if (on) invalidate(); }
+function driftClouds(dt) {
+  const step = CLOUD_DRIFT * (weatherMode === 0 ? 1 : 0.3) * dt;
+  for (const c of cloudSprites) {
+    c.position.x += step;
+    if (c.position.x > c.userData.x0 + c.userData.span * 0.5) c.position.x -= c.userData.span;
+  }
+}
+// overcast/rain sky + light override, applied AFTER setTime() computed the day/night
+// values (so it multiplies them — night stays night). No-op when Clear.
+function applyWeatherSky(day, civil) {
+  if (weatherMode === 0) { if (cloudMat) cloudMat.opacity = 0.8 * day; return; }
+  const U = skyMat.uniforms, grey = new THREE.Color(0x9aa3a8);
+  const w = weatherMode === 2 ? Math.max(0.4, WX.wet) : 1;     // Cloudy = full; Rain ramps with wetness
+  U.uSunI.value *= (1 - 0.85 * w);
+  sun.intensity *= (1 - 0.55 * w);
+  U.uTop.value.lerp(grey.clone().multiplyScalar(0.85), 0.75 * w);
+  U.uBot.value.lerp(grey, 0.80 * w);
+  U.uHaze.value.lerp(grey.clone().multiplyScalar(1.05), 0.85 * w);
+  hemi.intensity = hemi.intensity * (1 - 0.2 * w) + 0.30 * w;
+  scene.fog.near = lerp(scene.fog.near, 60, w);
+  scene.fog.far = lerp(scene.fog.far, 210, w);
+  scene.fog.color.lerp(grey, 0.7 * w);
+  if (cloudMat) { cloudMat.opacity = 0.95 * (0.35 + 0.65 * civil); cloudMat.color.setHex(0xc4c8cc); }
+}
+// falling rain: camera-following box of streaked LineSegments (correct parallax + DOF)
+function buildRain() {
+  if (WX.geo) return;
+  const N = isMobileWX ? 1200 : 4200; WX.count = N;
+  const pos = new Float32Array(N * 6), col = new Float32Array(N * 6);
+  WX.vel = new Float32Array(N); WX.base = new Float32Array(N * 3);
+  const BOX = WX.BOX, TOP = WX.TOP;
+  for (let i = 0; i < N; i++) {
+    const x = (Math.random() * 2 - 1) * BOX, y = Math.random() * TOP, z = (Math.random() * 2 - 1) * BOX, L = .45 + Math.random() * .4;
+    WX.base[i * 3] = x; WX.base[i * 3 + 1] = y; WX.base[i * 3 + 2] = z; WX.vel[i] = 26 + Math.random() * 14;
+    pos[i * 6] = x; pos[i * 6 + 1] = y; pos[i * 6 + 2] = z; pos[i * 6 + 3] = x + .05; pos[i * 6 + 4] = y - L; pos[i * 6 + 5] = z;
+    col[i * 6] = .72; col[i * 6 + 1] = .78; col[i * 6 + 2] = .86; col[i * 6 + 3] = .34; col[i * 6 + 4] = .38; col[i * 6 + 5] = .44;
+  }
+  WX.geo = new THREE.BufferGeometry();
+  WX.geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+  WX.geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  WX.segPos = WX.geo.attributes.position;
+  WX.rig = new THREE.LineSegments(WX.geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: true }));
+  WX.rig.frustumCulled = false; WX.rig.renderOrder = 5; WX.rig.visible = false;
+  scene.add(WX.rig);
+}
+function stepRain(dt) {
+  if (!WX.segPos) return;
+  const p = WX.segPos.array, base = WX.base, vel = WX.vel, N = WX.count, TOP = WX.TOP, BOX = WX.BOX, wind = .06;
+  const cx = camera.position.x, cz = camera.position.z;
+  for (let i = 0; i < N; i++) {
+    let y = base[i * 3 + 1] - vel[i] * dt;
+    if (y < -2) { y += TOP + 2; base[i * 3] = (Math.random() * 2 - 1) * BOX; base[i * 3 + 2] = (Math.random() * 2 - 1) * BOX; }
+    base[i * 3 + 1] = y;
+    const x = base[i * 3] + cx, z = base[i * 3 + 2] + cz, L = .6 + vel[i] * .012;
+    p[i * 6] = x; p[i * 6 + 1] = y; p[i * 6 + 2] = z; p[i * 6 + 3] = x + wind * L; p[i * 6 + 4] = y - L; p[i * 6 + 5] = z;
+  }
+  WX.segPos.needsUpdate = true;
+  WX.rig.material.opacity = Math.min(0.9, WX.wet * 1.1);
+}
+// wet ground: darker, glossier, more reflective — reversible from a dry snapshot
+const WET_MATS = ['pebble', 'agg', 'conc', 'paver'];
+function snapshotDry() {
+  if (WX.dryCache) return;
+  WX.dryCache = {};
+  for (const k of WET_MATS) { const m = MAT[k]; WX.dryCache[k] = { rough: m.roughness, env: m.envMapIntensity, col: m.color.clone() }; }
+}
+function applyWet(w) {
+  for (const k of WET_MATS) {
+    const d = WX.dryCache[k], m = MAT[k];
+    m.roughness = lerp(d.rough, (k === 'conc' || k === 'paver') ? .18 : .34, w);
+    m.envMapIntensity = lerp(d.env, 1.15, w);
+    m.color.copy(d.col).multiplyScalar(lerp(1, .62, w));
+  }
+}
+function easeWet(dt) {
+  const k = 1 - Math.pow(0.0015, dt);                  // ~1.5 s frame-rate-independent ease
+  WX.wet += (WX.target - WX.wet) * k;
+  if (Math.abs(WX.wet - WX.target) < 0.002) WX.wet = WX.target;
+  if (WX.dryCache) applyWet(WX.wet);
+  setTime(timeHour);                                   // re-runs sky/light + applyWeatherSky + (debounced) IBL
+  if (WX.wet === 0 && WX.target === 0) finalizeDry();
+}
+function finalizeDry() {
+  if (WX.rig) { WX.rig.visible = false; rainActive = false; }
+  if (WX.dryCache) for (const k of WET_MATS) { const d = WX.dryCache[k], m = MAT[k]; m.roughness = d.rough; m.envMapIntensity = d.env; m.color.copy(d.col); }
+  if (WX.prevDPR != null) { renderer.setPixelRatio(WX.prevDPR); WX.prevDPR = null; }
+}
+// public: cycle Clear(0) → Cloudy(1) → Rain(2)
+function setWeather(mode) {
+  weatherMode = mode;
+  setCloudDrift(true);                                 // subtle drift in every state
+  if (mode === 2) {
+    snapshotDry();
+    if (WX.enabled) { buildRain(); WX.rig.visible = true; rainActive = true; }
+    if (isMobileWX && WX.prevDPR == null) { WX.prevDPR = renderer.getPixelRatio(); renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25)); }
+    WX.target = 1;
+  } else if (mode === 1) {
+    snapshotDry(); WX.target = 0; rainActive = false;  // keep overcast, ease ground dry
+  } else {
+    WX.target = 0; rainActive = false; setCloudDrift(false);
+  }
+  setTime(timeHour); invalidate();
+}
+// public: garage door rolls up, "open up" (stackers + sashes + front door), all reversible
+function toggleGarage(open) {
+  const e = ANIM.garage[0]; if (!e) return;
+  const from = e.grp.scale.y, to = open ? e.openS : e.closedS;   // roll the door up into the lintel
+  addTween(0.9, t => { e.grp.scale.y = lerp(from, to, t); }, reshadow);
+}
+function toggleOpenUp(open) {
+  for (const e of ANIM.stacker) { const f = e.grp.position.x, t = open ? e.openX : e.closedX; addTween(1.0, p => { e.grp.position.x = lerp(f, t, p); }); }
+  for (const e of ANIM.window) { const f = e.grp.rotation.x, t = open ? e.openRot : e.closedRot; addTween(0.9, p => { e.grp.rotation.x = lerp(f, t, p); }); }   // awning tilt (hinge along wall = local X)
+  for (const e of ANIM.door) { const f = e.grp.rotation.y, t = open ? e.openRot : e.closedRot; addTween(1.1, p => { e.grp.rotation.y = lerp(f, t, p); }); }
+  setTimeout(reshadow, 1200);
+}
+
 // Drive the whole scene from a Melbourne hour (0–24): sun/moon direction &
 // colour, sky-dome gradient, hemisphere/ambient/exposure, fog, stars, and every
 // night fixture (street lamps, lit windows, highway lights). Physically-based
@@ -1621,7 +1796,8 @@ function setTime(hour) {
   const day = smooth(-1, 9, el);           // full daylight above ~9°
   const civil = smooth(-7, 1, el);         // sky still lit through civil twilight
   const night = 1 - civil;
-  const lampF = 1 - smooth(-3, 7, el);     // artificial lights ramp on at dusk
+  let lampF = 1 - smooth(-3, 7, el);       // artificial lights ramp on at dusk
+  if (lightsOverride) lampF = 1;           // manual "lights on" override (every fixture reads lampF)
   const goldF = Math.max(0, el > -3 && el < 13 ? 1 - Math.abs(el - 5) / 9 : 0) * (1 - day * 0.35);
 
   // ---- key light: sun by day, a faint cool skyglow fill by night ----
@@ -1673,11 +1849,15 @@ function setTime(hour) {
   MAT.nbrWin.emissiveIntensity = lampF * 1.05;
   MAT.headlight.emissiveIntensity = lampF * 2.2;
   MAT.taillight.emissiveIntensity = lampF * 1.6;
-  if (cloudMat) cloudMat.opacity = 0.8 * day;
+
+  // ---- weather override (overcast / rain): grey sky + dim sun + raised fog,
+  // layered on top of the day/night values just computed. No-op when Clear. ----
+  applyWeatherSky(day, civil);
 
   // ---- glass reads dark & less reflective at night (interior glow dominates) ----
   MAT.glass.color.setHex(lerpHex(0x0a0e12, 0x2b3a42, civil));
   MAT.glass.envMapIntensity = lerp(0.25, 1.3, civil);
+  if (weatherMode === 2) MAT.glass.envMapIntensity = Math.max(MAT.glass.envMapIntensity, 0.9 * WX.wet);  // wet glass stays reflective
   MAT.glass.opacity = lerp(0.95, 0.88, civil);
 
   // refresh the reflection environment to match the new sky (debounced)
@@ -1906,11 +2086,46 @@ function bindHudButtons() {
   document.getElementById('zoomOut').addEventListener('click', () => {
     dist = Math.min(140, dist + 7); updateCam();
   });
+  // ---- interactive action row ----
+  const wbtn = document.getElementById('weatherBtn');
+  if (wbtn) wbtn.addEventListener('click', function () {
+    weatherMode = (weatherMode + 1) % 3;
+    const A = I18N[LANG].hero.actions;
+    this.className = 'hbtn wx ' + ['wx-clear', 'wx-cloud', 'wx-rain'][weatherMode];
+    this.textContent = ['☀ ' + A.wxClear, '☁ ' + A.wxCloud, '🌧 ' + A.wxRain][weatherMode];
+    setWeather(weatherMode);
+  });
+  const gbtn = document.getElementById('garageBtn');
+  if (gbtn) gbtn.addEventListener('click', function () {
+    garageOpen = !garageOpen; this.classList.toggle('active', garageOpen);
+    this.querySelector('.lbl').textContent = ' ' + (garageOpen ? I18N[LANG].hero.actions.garageClose : I18N[LANG].hero.actions.garageOpen);
+    toggleGarage(garageOpen);
+  });
+  const obtn = document.getElementById('openBtn');
+  if (obtn) obtn.addEventListener('click', function () {
+    housesOpen = !housesOpen; this.classList.toggle('active', housesOpen);
+    this.querySelector('.lbl').textContent = ' ' + (housesOpen ? I18N[LANG].hero.actions.closeUp : I18N[LANG].hero.actions.openUp);
+    toggleOpenUp(housesOpen);
+  });
+  const lbtn = document.getElementById('lightsBtn');
+  if (lbtn) lbtn.addEventListener('click', function () {
+    lightsOverride = !lightsOverride; this.classList.toggle('active', lightsOverride);
+    this.querySelector('.lbl').textContent = ' ' + (lightsOverride ? I18N[LANG].hero.actions.lightsOff : I18N[LANG].hero.actions.lightsOn);
+    setTime(timeHour); invalidate();
+  });
 }
-function animate() {
+let _lastT = 0;
+function animate(now) {
   requestAnimationFrame(animate);
-  if (!heroVisible) return;
+  if (!heroVisible) { _lastT = now || 0; return; }      // off-screen → no work (battery)
+  const dt = _lastT ? Math.min(.05, ((now || 0) - _lastT) / 1000) : 0; _lastT = now || 0;
   if (autoRot) { rotY += .002; updateCam(); }
+  if (tweens.length) stepTweens(dt);
+  // weather: animate while raining OR while wetness is still easing in/out
+  const wxEasing = Math.abs(WX.wet - WX.target) > 0.002;
+  if (rainActive || wxEasing) { if (rainActive) stepRain(dt); easeWet(dt); }
+  if (cloudsDrift) driftClouds(dt);
+  if (anyActive() || wxEasing) invalidate();            // keep frames coming while active; else on-demand
   if (needsRender) { renderFrame(); needsRender = false; }
 }
 // Debounced resize: iOS Safari fires resize continuously while the URL bar
