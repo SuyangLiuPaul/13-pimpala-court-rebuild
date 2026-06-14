@@ -2006,7 +2006,7 @@ function bindCanvasControls() {
   // while in live mode, advance with the real Melbourne clock (so "now" stays now)
   clearInterval(clockTimer);
   clockTimer = setInterval(() => {
-    if (!liveClock || !heroVisible) return;
+    if (!liveClock || document.hidden) return;
     const h = melbNow().hour; if (Math.abs(h - timeHour) < 0.008) return;
     if (slider) slider.value = h; applyTime(h);
   }, 30000);
@@ -2122,21 +2122,28 @@ function bindHudButtons() {
 }
 let _lastT = 0;
 function wxBusy() { return anyActive() || Math.abs(WX.wet - WX.target) > 0.002; }
+// Robust visibility check — read the hero's rect directly each frame instead of
+// trusting the async IntersectionObserver (which can latch false on iOS and then
+// drop every render, making taps look dead). Renders pause ONLY when the tab is
+// backgrounded or the hero is fully scrolled off-screen.
+function heroOnScreen() {
+  const h = document.getElementById('hero'); if (!h) return true;
+  const r = h.getBoundingClientRect();
+  return r.bottom > 0 && r.top < (innerHeight || 800);
+}
 function animate(now) {
   requestAnimationFrame(animate);
-  // idle + off-screen → skip for battery; but an ACTIVE animation (tween / rain /
-  // weather ease) must keep rendering even if iOS momentarily reports the hero
-  // off-screen — otherwise a tap looks like it did nothing.
-  if (!heroVisible && !wxBusy()) { _lastT = now || 0; return; }
+  if (document.hidden || (!heroOnScreen() && !wxBusy())) { _lastT = now || 0; return; }
   const dt = _lastT ? Math.min(.05, ((now || 0) - _lastT) / 1000) : 0; _lastT = now || 0;
   try {
     if (autoRot) { rotY += .002; updateCam(); }
     if (tweens.length) stepTweens(dt);
     if (rainActive || Math.abs(WX.wet - WX.target) > 0.002) { if (rainActive) stepRain(dt); easeWet(dt); }
     if (cloudsDrift) driftClouds(dt);
+    // ALWAYS render while visible — no on-demand gating. Bulletproof: any state
+    // change (button tap, slider, weather, tween) is guaranteed to show.
+    renderFrame(); needsRender = false;
   } catch (e) { /* never let one bad frame kill the render loop */ }
-  if (wxBusy()) invalidate();                            // keep frames coming while active; else on-demand
-  if (needsRender) { renderFrame(); needsRender = false; }
 }
 // Debounced resize: iOS Safari fires resize continuously while the URL bar
 // collapses during scroll — resizing the GL canvas every frame janks the page.
