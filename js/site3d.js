@@ -2088,45 +2088,54 @@ function bindHudButtons() {
     dist = Math.min(140, dist + 7); updateCam();
   });
   // ---- interactive action row ----
+  // every handler runs its action in a guard that forces an immediate render +
+  // kicks the loop, so a tap always shows an effect even if the on-demand loop
+  // was idle or iOS was throttling rAF.
+  const kick = () => { invalidate(); _lastT = 0; if (renderer) { try { renderFrame(); needsRender = false; } catch (e) {} } };
+  const onTap = fn => function (ev) { ev && ev.preventDefault(); try { fn.call(this); } catch (e) {} kick(); };
   const wbtn = document.getElementById('weatherBtn');
-  if (wbtn) wbtn.addEventListener('click', function () {
+  if (wbtn) wbtn.addEventListener('click', onTap(function () {
     weatherMode = (weatherMode + 1) % 3;
     const A = I18N[LANG].hero.actions;
     this.className = 'hbtn wx ' + ['wx-clear', 'wx-cloud', 'wx-rain'][weatherMode];
     this.textContent = ['☀ ' + A.wxClear, '☁ ' + A.wxCloud, '🌧 ' + A.wxRain][weatherMode];
     setWeather(weatherMode);
-  });
+  }));
   const gbtn = document.getElementById('garageBtn');
-  if (gbtn) gbtn.addEventListener('click', function () {
+  if (gbtn) gbtn.addEventListener('click', onTap(function () {
     garageOpen = !garageOpen; this.classList.toggle('active', garageOpen);
     this.querySelector('.lbl').textContent = ' ' + (garageOpen ? I18N[LANG].hero.actions.garageClose : I18N[LANG].hero.actions.garageOpen);
     toggleGarage(garageOpen);
-  });
+  }));
   const obtn = document.getElementById('openBtn');
-  if (obtn) obtn.addEventListener('click', function () {
+  if (obtn) obtn.addEventListener('click', onTap(function () {
     housesOpen = !housesOpen; this.classList.toggle('active', housesOpen);
     this.querySelector('.lbl').textContent = ' ' + (housesOpen ? I18N[LANG].hero.actions.closeUp : I18N[LANG].hero.actions.openUp);
     toggleOpenUp(housesOpen);
-  });
+  }));
   const lbtn = document.getElementById('lightsBtn');
-  if (lbtn) lbtn.addEventListener('click', function () {
+  if (lbtn) lbtn.addEventListener('click', onTap(function () {
     lightsOverride = !lightsOverride; this.classList.toggle('active', lightsOverride);
     this.querySelector('.lbl').textContent = ' ' + (lightsOverride ? I18N[LANG].hero.actions.lightsOff : I18N[LANG].hero.actions.lightsOn);
-    setTime(timeHour); invalidate();
-  });
+    setTime(timeHour);
+  }));
 }
 let _lastT = 0;
+function wxBusy() { return anyActive() || Math.abs(WX.wet - WX.target) > 0.002; }
 function animate(now) {
   requestAnimationFrame(animate);
-  if (!heroVisible) { _lastT = now || 0; return; }      // off-screen → no work (battery)
+  // idle + off-screen → skip for battery; but an ACTIVE animation (tween / rain /
+  // weather ease) must keep rendering even if iOS momentarily reports the hero
+  // off-screen — otherwise a tap looks like it did nothing.
+  if (!heroVisible && !wxBusy()) { _lastT = now || 0; return; }
   const dt = _lastT ? Math.min(.05, ((now || 0) - _lastT) / 1000) : 0; _lastT = now || 0;
-  if (autoRot) { rotY += .002; updateCam(); }
-  if (tweens.length) stepTweens(dt);
-  // weather: animate while raining OR while wetness is still easing in/out
-  const wxEasing = Math.abs(WX.wet - WX.target) > 0.002;
-  if (rainActive || wxEasing) { if (rainActive) stepRain(dt); easeWet(dt); }
-  if (cloudsDrift) driftClouds(dt);
-  if (anyActive() || wxEasing) invalidate();            // keep frames coming while active; else on-demand
+  try {
+    if (autoRot) { rotY += .002; updateCam(); }
+    if (tweens.length) stepTweens(dt);
+    if (rainActive || Math.abs(WX.wet - WX.target) > 0.002) { if (rainActive) stepRain(dt); easeWet(dt); }
+    if (cloudsDrift) driftClouds(dt);
+  } catch (e) { /* never let one bad frame kill the render loop */ }
+  if (wxBusy()) invalidate();                            // keep frames coming while active; else on-demand
   if (needsRender) { renderFrame(); needsRender = false; }
 }
 // Debounced resize: iOS Safari fires resize continuously while the URL bar
