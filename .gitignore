@@ -4,3 +4,8 @@ _old_site/
 _research/salvage/
 node_modules/
 .netlify/
+
+# local 3D capture-verification scratch (not for the repo)
+_research/_shot*.png
+_research/_cap*
+_research/capsink.py
