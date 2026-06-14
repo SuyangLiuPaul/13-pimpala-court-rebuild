@@ -968,7 +968,7 @@ function buildLot() {
   wheelieBin(lotG, 14.2, 0.4, 0x5a9440, Math.PI);   // green lid — FOGO
 
   // ---- electric car parked on the driveway + EV charge pedestal ----
-  evCar(lotG, 16.3, 0.4, MAT.carBlue || MAT.steel);
+  teslaModelY(lotG, 16.3, 0.4);                   // Tesla Model Y (Pearl White) on the driveway
   // wall charger box near the garage door
   const wc = new THREE.Group();
   B(wc, .26, .42, .14, 0, 1.2, 0, MAT.white);
@@ -1056,6 +1056,65 @@ function evCar(g, u, v, mat) {
   // charge port glow on the rear quarter
   const port = new THREE.Mesh(new THREE.BoxGeometry(.04, .12, .12), new THREE.MeshStandardMaterial({ color: 0x6fc0e0, emissive: 0x2a7090, emissiveIntensity: .7 }));
   port.position.set(.93, .55, 1.7); o.add(port);
+  const p = hw(u, v); o.position.set(p[0], 0, p[1]); o.rotation.y = ROT;
+  o.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+  g.add(o);
+}
+
+// BYD Atto 3 — compact electric crossover (~4.46 m). Tall rounded SUV body,
+// Dragon-Face split DRL, full-width tail bar, silver roof rails, pano glass roof.
+function bydAtto3(g, u, v, paint) {
+  const o = new THREE.Group();
+  const BODY = paint || new THREE.MeshPhysicalMaterial({ color: 0x2f6fb0, metalness: .65, roughness: .42, clearcoat: 1, clearcoatRoughness: .06 }); // Surf Blue
+  const L = 4.46, W = 1.80, ride = 0.30;
+  B(o, W, 0.60, L, 0, ride + .30, 0, BODY);                              // main lower body (tall)
+  B(o, W - .04, 0.46, L * .55, 0, ride + .78, -.06, BODY);              // cabin shoulder (high)
+  B(o, W - .26, 0.40, L * .50, 0, ride + 1.06, -.06, BODY);             // roof header
+  B(o, W - .30, 0.34, L * .47, -.02, ride + 1.05, -.05, MAT.carGlass);  // glasshouse + pano
+  B(o, W + .04, 0.16, L, 0, ride + .07, 0, MAT.fascia, false);          // sill / lower cladding
+  B(o, W + .06, 0.04, L * .96, 0, ride + .02, 0, MAT.fascia, false);    // shadow skirt
+  B(o, W - .10, 0.10, .05, 0, ride + .50, L / 2 - .02, MAT.headlight);  // Dragon-Face DRL "moustache"
+  B(o, .34, 0.16, .06, -W / 2 + .26, ride + .50, L / 2 - .03, MAT.headlight);
+  B(o, .34, 0.16, .06, W / 2 - .26, ride + .50, L / 2 - .03, MAT.headlight);
+  B(o, W - .06, 0.12, .05, 0, ride + .52, -L / 2 + .02, MAT.taillight);  // full-width tail bar
+  [-(W / 2 - .18), (W / 2 - .18)].forEach(x => B(o, .05, .05, L * .42, x, ride + 1.27, -.05, MAT.steel)); // roof rails
+  B(o, .04, .34, .42, -(W / 2 - .02), ride + 1.00, -L * .22, MAT.steel, false);
+  B(o, .04, .34, .42, (W / 2 - .02), ride + 1.00, -L * .22, MAT.steel, false);
+  const wr = .34, wy = wr;
+  [[-(W / 2 - .04), L * .31], [W / 2 - .04, L * .31], [-(W / 2 - .04), -L * .31], [W / 2 - .04, -L * .31]].forEach(([wx, wz]) => {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(wr, wr, .22, 18), MAT.tyre); t.rotation.z = Math.PI / 2; t.position.set(wx, wy, wz); o.add(t);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(.155, .155, .24, 12), MAT.steel); hub.rotation.z = Math.PI / 2; hub.position.set(wx, wy, wz); o.add(hub);
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(wr + .03, .05, 6, 16, Math.PI), MAT.fascia); arch.position.set(wx > 0 ? wx - .11 : wx + .11, wy, wz); arch.rotation.y = Math.PI / 2; o.add(arch);
+  });
+  const port = new THREE.Mesh(new THREE.BoxGeometry(.04, .12, .12), new THREE.MeshStandardMaterial({ color: 0x6fc0e0, emissive: 0x2a7090, emissiveIntensity: .7 }));
+  port.position.set(W / 2 - .02, ride + .45, -L / 2 + .55); o.add(port);
+  const p = hw(u, v); o.position.set(p[0], 0, p[1]); o.rotation.y = ROT;
+  o.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+  g.add(o);
+}
+
+// Tesla Model Y 2025 "Juniper" (~4.79 m). Low smooth aero SUV, full glass roof,
+// front + rear full-width LED light bars, flush handles, body-colour (no cladding).
+function teslaModelY(g, u, v, paint) {
+  const o = new THREE.Group();
+  const BODY = paint || MAT.carBody2;                                    // Pearl White
+  const L = 4.79, W = 1.85, ride = 0.26;
+  B(o, W, 0.52, L, 0, ride + .26, 0, BODY);                             // lower body (low)
+  B(o, W - .06, 0.40, L * .64, 0, ride + .66, -.10, BODY);             // long low cabin
+  B(o, W - .20, 0.30, L * .58, -.02, ride + .92, -.14, BODY);          // fastback roof header
+  B(o, W - .24, 0.06, L * .56, -.02, ride + 1.05, -.12, MAT.carGlass, false); // glass roof skin
+  B(o, W - .26, 0.30, L * .52, -.02, ride + .90, -.12, MAT.carGlass);  // side glasshouse
+  B(o, W + .02, 0.04, L * .97, 0, ride + .02, 0, MAT.fascia, false);   // shadow skirt only
+  B(o, W * .40, 0.05, .04, -W * .27, ride + .48, L / 2 - .02, MAT.headlight); // front bar L (centre gap)
+  B(o, W * .40, 0.05, .04, W * .27, ride + .48, L / 2 - .02, MAT.headlight);  // front bar R
+  B(o, W - .04, 0.06, .04, 0, ride + .58, -L / 2 + .02, MAT.taillight); // full-width rear bar (the icon)
+  B(o, .26, 0.10, .03, 0, ride + .30, -L / 2 + .04, MAT.fascia);        // bumper plate recess
+  [[-W / 2, L * .10], [W / 2, L * .10], [-W / 2, -L * .14], [W / 2, -L * .14]].forEach(([x, z]) => B(o, .02, .04, .18, x * 1.001, ride + .60, z, MAT.fascia, false)); // flush handles
+  const wr = .35, wy = wr;
+  [[-(W / 2 - .03), L * .34], [W / 2 - .03, L * .34], [-(W / 2 - .03), -L * .34], [W / 2 - .03, -L * .34]].forEach(([wx, wz]) => {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(wr, wr, .22, 18), MAT.tyre); t.rotation.z = Math.PI / 2; t.position.set(wx, wy, wz); o.add(t);
+    const aero = new THREE.Mesh(new THREE.CylinderGeometry(.24, .24, .235, 16), MAT.steel); aero.rotation.z = Math.PI / 2; aero.position.set(wx, wy, wz); o.add(aero);
+  });
   const p = hw(u, v); o.position.set(p[0], 0, p[1]); o.rotation.y = ROT;
   o.traverse(m => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
   g.add(o);
@@ -1407,7 +1466,7 @@ function buildInteriorGround() {
   furnish(intGround, 'wudu', 13.3, 12.3, 0, 0);
   furnish(intGround, 'bench', 18.4, 9.7, -90, 0, { len: 1.9 });
   furnish(intGround, 'wc', 1.0, 10.4, 0, 0); furnish(intGround, 'vanity', 1.6, 11.3, 180, 0);
-  furnish(intGround, 'car', 14.2, 5.4, 0, 0); furnish(intGround, 'car', 17.0, 5.4, 0, 0);
+  bydAtto3(intGround, 14.2, 5.4); teslaModelY(intGround, 17.0, 5.4);   // garage bays: BYD Atto 3 + Tesla Model Y
   furnish(intGround, 'dining', 15.7, 14.6, 0, 0);
 }
 function buildInteriorUpper() {
@@ -1550,8 +1609,19 @@ function initScene() {
     document.getElementById('loading').style.opacity = '1';
   }, false);
   renderer.domElement.addEventListener('webglcontextrestored', () => {
+    // iOS drops the GL context under memory pressure → textures/materials/composer
+    // are gone. Rebuild them (not just shadows) or the canvas stays black/frozen
+    // while the HUD still works ("doesn't work"). Full, defensive restore.
+    try {
+      makeTextures(); makeMaterials();
+      const pm = new THREE.PMREMGenerator(renderer); pm.compileEquirectangularShader();
+      scene.environment = pm.fromEquirectangular(scene.userData.skyTex).texture; pm.dispose();
+      setupComposer(heroEl.clientWidth, heroEl.clientHeight, matchMedia('(pointer: fine)').matches);
+      renderer.shadowMap.needsUpdate = true;
+      setTime(timeHour); applyView(); updateCam();
+    } catch (e) { console.error('[gl-restore]', e); }
     document.getElementById('loading').style.opacity = '0';
-    reshadow();
+    invalidate();
   }, false);
 
   animate();
