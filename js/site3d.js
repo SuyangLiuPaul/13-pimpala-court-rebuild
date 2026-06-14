@@ -1743,12 +1743,13 @@ function applyWet(w) {
   }
 }
 function easeWet(dt) {
+  if (WX.wet === WX.target) return;                    // steady state → no per-frame setTime/reshadow (rain just falls)
   const k = 1 - Math.pow(0.0015, dt);                  // ~1.5 s frame-rate-independent ease
   WX.wet += (WX.target - WX.wet) * k;
   if (Math.abs(WX.wet - WX.target) < 0.002) WX.wet = WX.target;
   if (WX.dryCache) applyWet(WX.wet);
   setTime(timeHour);                                   // re-runs sky/light + applyWeatherSky + (debounced) IBL
-  if (WX.wet === 0 && WX.target === 0) finalizeDry();
+  if (WX.wet === 0 && WX.target === 0) finalizeDry();  // runs once on the frame wetness hits 0
 }
 function finalizeDry() {
   if (WX.rig) { WX.rig.visible = false; rainActive = false; }
@@ -1839,6 +1840,7 @@ function setTime(hour) {
 
   // ---- fog matches the horizon ----
   scene.fog.color.setHex(lerpHex(0x0b1422, 0xc8d6dc, civil));
+  scene.fog.near = 150; scene.fog.far = 300;           // base each call → applyWeatherSky lerps from here, restores on Clear
 
   // ---- night fixtures ----
   for (const L of streetLamps) { L.light.intensity = lampF * (L.head ? 9 : 6.5); L.pool.material.opacity = lampF * (L.head ? 0.55 : 0.45); }
