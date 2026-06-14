@@ -4,7 +4,7 @@
 // House frame: u 0(east)→19(west), v 0(front/south)→16+(rear)
 // World: x = site east, z = −site north.
 // ============================================================
-let scene, camera, renderer, sun, hemi, ambient, composer, fxaaPass, ssaoPass;
+let scene, camera, renderer, sun, hemi, ambient, composer, fxaaPass, ssaoPass, bokehPass;
 let extG, roofG, siteCtxG, lotG, intGround, intUpper;
 let skyMesh, skyMat, stars, moonSprite, cloudMat;
 let view = 'exterior', autoRot = false, roofOn = true;
@@ -1681,6 +1681,20 @@ function setupComposer(w, h, desktop) {
       ssaoPass.maxDistance = 0.10;
       composer.addPass(ssaoPass);
     }
+    // subtle depth-of-field — the house (at the orbit focus distance) stays sharp
+    // while the far neighbours/sky and very-near foreground fall softly out of
+    // focus, like a real architectural photo on a fast lens. Desktop-only (it adds
+    // a depth pre-pass); focus is retargeted to `dist` every frame in renderFrame().
+    if (desktop && typeof THREE.BokehPass === 'function') {
+      bokehPass = new THREE.BokehPass(scene, camera, { focus: dist, aperture: 0.0011, maxblur: 0.010, width: w, height: h });
+      // r128 BokehPass ships needsSwap=false (meant for a terminal/renderToScreen
+      // slot); mid-chain that silently drops its output. Force the swap so the
+      // bloom/grade passes after it receive the DOF'd image.
+      bokehPass.needsSwap = true;
+      const bu = bokehPass.materialBokeh && bokehPass.materialBokeh.uniforms;
+      if (bu && bu.aspect) bu.aspect.value = w / h;
+      composer.addPass(bokehPass);
+    }
     // subtle photographic glow on the brightest highlights (sky, sunlit render,
     // solar/glass speculars) — low strength + high threshold so it never washes out
     if (typeof THREE.UnrealBloomPass === 'function') {
@@ -1699,6 +1713,8 @@ function setupComposer(w, h, desktop) {
   } catch (e) { useComposer = false; }
 }
 function renderFrame() {
+  // keep DOF focused on the house (the orbit pivot is at distance `dist`)
+  if (bokehPass && bokehPass.materialBokeh) bokehPass.materialBokeh.uniforms.focus.value = dist;
   if (useComposer && composer) composer.render();
   else renderer.render(scene, camera);
 }
@@ -1856,6 +1872,7 @@ addEventListener('resize', () => {
       composer.setSize(w, h);
       const pr = renderer.getPixelRatio();
       if (ssaoPass) ssaoPass.setSize(w, h);
+      if (bokehPass && bokehPass.materialBokeh && bokehPass.materialBokeh.uniforms.aspect) bokehPass.materialBokeh.uniforms.aspect.value = w / h;
       if (fxaaPass) fxaaPass.material.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
     }
     reshadow();
