@@ -1763,7 +1763,6 @@ function setWeather(mode) {
   if (mode === 2) {
     snapshotDry();
     if (WX.enabled) { buildRain(); WX.rig.visible = true; rainActive = true; }
-    if (isMobileWX && WX.prevDPR == null) { WX.prevDPR = renderer.getPixelRatio(); renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25)); }
     WX.target = 1;
   } else if (mode === 1) {
     snapshotDry(); WX.target = 0; rainActive = false;  // keep overcast, ease ground dry
